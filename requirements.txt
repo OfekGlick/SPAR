@@ -1,0 +1,23 @@
+gymnasium
+gym
+torch
+tqdm
+gymnasium_robotics
+numpy
+# safety-gymnasium
+tensorboard
+wandb
+pyyaml
+moviepy
+typing-extensions
+typer[all]
+seaborn
+pandas
+matplotlib
+gdown
+pytorch_lightning
+scipy
+scikit-learn
+farama-notifications
+pygame
+rliable

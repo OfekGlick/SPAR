@@ -1,0 +1,75 @@
+import omnisafe
+import argparse
+
+def parse_arguments():
+    parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+    parser.add_argument(
+        '--algo',
+        type=str,
+        metavar='ALGO',
+        default='PPO',
+        help='algorithm to train',
+        choices=omnisafe.ALGORITHMS['all'],
+    )
+
+    parser.add_argument(
+        '--env-id',
+        type=str,
+        default="budget-aware-intersection-v1",
+        help='environment to use',
+    )
+    parser.add_argument(
+        '--use-cost',
+        action='store_true',
+        help='environment to use',
+    )
+
+    parser.add_argument(
+        '--use-all-obs',
+        action='store_true',
+        help='whether to use all observations always or not',
+    )
+    parser.add_argument(
+        '--eval-num-episodes',
+        type=int,
+        default=1_000,
+        help='number of episodes to evaluate the agent',
+    )
+    parser.add_argument(
+        '--total-steps',
+        type=int,
+        default=409_600,
+        # default=50,
+        help='total number of steps to train the agent',
+    )
+    parser.add_argument(
+        '--budget',
+        type=float,
+        default=1_000,
+        help='the ratio of the budget to the maximum cost per episode',
+    )
+    parser.add_argument(
+        '--max_episode_steps',
+        type=float,
+        default=250,
+        help='the maximum number of steps per episode',
+    )
+    # parser.add_argument(
+    #     '--feature-cost',
+    #     type=float,
+    #     nargs='+',
+    #     help='list of feature costs',
+    # )
+    # parser.add_argument(
+    #     '--features-to-use',
+    #     type=int,
+    #     nargs='+',
+    #     help='list of feature costs',
+    # )
+    parser.add_argument(
+        '--seed',
+        default=42,
+        type=int,
+        help='seed of the run',
+    )
+    return parser.parse_known_args()

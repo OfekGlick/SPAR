@@ -1,0 +1,80 @@
+{
+  "budget-aware-intersection-v1_SelectedObs_BudgetNone_10_steps": {
+    "CPPOPID_(sensor_used_mean)_(sensor_used_std)": [
+      [
+        [
+          1.0,
+          1.0,
+          1.0
+        ],
+        [
+          0.0,
+          0.0,
+          0.0
+        ]
+      ]
+    ],
+    "CPPOPID_cost": [
+      6.0
+    ],
+    "CPPOPID_reward": [
+      1.0
+    ],
+    "PPO_(sensor_used_mean)_(sensor_used_std)": [
+      [
+        [
+          1.0,
+          0.0,
+          0.0
+        ],
+        [
+          0.0,
+          0.0,
+          0.0
+        ]
+      ]
+    ],
+    "PPO_cost": [
+      1.2
+    ],
+    "PPO_reward": [
+      0.2
+    ]
+  },
+  "budget-aware-intersection-v1_SelectedObs_BudgetNone_50_steps": {
+    "SAC_(sensor_used_mean)_(sensor_used_std)": [
+      [
+        [
+          0.24000000953674316,
+          1.0,
+          0.0
+        ],
+        [
+          0.22449944913387299,
+          0.0,
+          0.0
+        ]
+      ],
+      [
+        [
+          0.14000000059604645,
+          1.0,
+          0.0
+        ],
+        [
+          0.1959591805934906,
+          0.0,
+          0.0
+        ]
+      ]
+    ],
+    "SAC_cost": [
+      4.0,
+      3.0
+    ],
+    "SAC_reward": [
+      2.4,
+      1.6
+    ]
+  }
+}
