@@ -39,7 +39,6 @@ def parse_arguments():
         '--total-steps',
         type=int,
         default=409_600,
-        # default=50,
         help='total number of steps to train the agent',
     )
     parser.add_argument(
@@ -53,6 +52,16 @@ def parse_arguments():
         type=float,
         default=250,
         help='the maximum number of steps per episode',
+    )
+    parser.add_argument(
+        '--sd-regulizer',
+        action='store_true',
+        help='whether to use the sensor dropout regulizer or not',
+    )
+    parser.add_argument(
+        '--no-zero-act',
+        action='store_true',
+        help='whether to use the zero-action regularizer or not',
     )
     # parser.add_argument(
     #     '--feature-cost',

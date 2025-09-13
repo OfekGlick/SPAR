@@ -92,7 +92,7 @@ def get_feature_costs(env_id: str, *, max_episode_steps: int) -> np.ndarray:
             pass
 
 
-def valid_combo(algo: str, use_cost: bool, use_all_obs: bool) -> bool:
+def valid_combo(algo: str, use_cost: bool, use_all_obs: bool, sd_regulizer: bool, no_zero_act: bool) -> bool:
     if use_cost and use_all_obs:
         return False
     if use_cost and algo in UNSAFE_ALGOS:
@@ -101,6 +101,10 @@ def valid_combo(algo: str, use_cost: bool, use_all_obs: bool) -> bool:
         return False
     if use_all_obs and (algo in SAFE_ALGOS):
         return False
+    if no_zero_act and use_all_obs:
+        return False
+    if sd_regulizer and use_all_obs:
+        return False
     return True
 
 
@@ -108,10 +112,10 @@ def main():
     p = argparse.ArgumentParser(description="Generate & submit Slurm jobs for BAFS experiments")
     p.add_argument("--run-py", type=str, default="/home/ofek.glick/BAFS_2/run_bafs_2.py",
                    help="Path to run_bafs_2.py entrypoint")
-    p.add_argument("--sbatch-template", type=str, default="sbatch_template_3.sh",
+    p.add_argument("--sbatch-template", type=str, default="sbatch_template_2.sh",
                    help="Path to sbatch template with '{}' placeholder")
     p.add_argument("--sbatch-dir", type=str,
-                   help="Directory to write per-run sbatch files", default='./sbatch_out')
+                   help="Directory to write per-run sbatch files", default='./sbatch_files')
     # Experiment parameters
     p.add_argument("--envs", nargs="+", default=[
         "budget-aware-highway-fast-v0",
@@ -125,10 +129,12 @@ def main():
     p.add_argument("--budget-ratios", nargs="+", type=float, default=[0.5, 0.8])
     p.add_argument("--cost-usage", nargs="+", type=int, default=[1], help="0/1 for use_cost")
     p.add_argument("--all-obs-usage", nargs="+", type=int, default=[1, 0], help="0/1 for use_all_obs")
+    p.add_argument("--sd-regulizer", nargs="+", type=int, default=[1, 0], help="0/1 for use_all_obs")
+    p.add_argument("--no-zero-act", nargs="+", type=int, default=[1, 0], help="0/1 for use_all_obs")
     # p.add_argument("--all-obs-usage", nargs="+", type=int, default=[1], help="0/1 for use_all_obs")
     # p.add_argument("--seeds", nargs="+", type=int, default=[31, 32, 33, 34, 35, 36, 37, 38, 39, 40])
-    p.add_argument("--seeds", nargs="+", type=int, default=[31, 32])
-    p.add_argument("--total-steps", type=int, default=409_600)
+    p.add_argument("--seeds", nargs="+", type=int, default=[31])
+    p.add_argument("--total-steps", type=int, default=819_200)
     p.add_argument("--eval-num-episodes", type=int, default=50)
     p.add_argument("--max-episode-steps", type=int, default=250)
     p.add_argument("--steps-per-epoch", type=int, default=8192)
@@ -152,43 +158,11 @@ def main():
             # Unsafe baselines
             for algo in args.unsafe_algos:
                 for use_all_obs in args.all_obs_usage:
-                    use_cost = False
-                    if not valid_combo(algo, use_cost, bool(use_all_obs)):
-                        continue
-                    py_args = dict(
-                        algo=algo,
-                        env_id=env_id,
-                        use_cost=bool(use_cost),
-                        use_all_obs=bool(use_all_obs),
-                        eval_num_episodes=args.eval_num_episodes,
-                        total_steps=args.total_steps,
-                        budget=compute_budget(args.max_episode_steps, 1.0, feature_costs),
-                        feature_cost=[f"{c:.4f}" for c in feature_costs.tolist()],
-                        max_episode_steps=args.max_episode_steps,
-                        steps_per_epoch=args.steps_per_epoch,
-                        seed=seed,
-                    )
-                    python_cmd = build_python_command(args.run_py, py_args)
-                    fname = f"{algo}_{env_id}_cost{int(use_cost)}_all{int(use_all_obs)}_Budget{int(py_args['budget'])}_Seed{seed}"
-                    sbatch_text = format_sbatch(template=sbatch_template, job_name=fname, python_cmd=python_cmd)
-                    if args.tag:
-                        fname = f"{fname}_{args.tag}"
-                    sbatch_path = out_dir / f"{fname}.sh"
-
-                    if args.dry_run:
-                        print(python_cmd)
-                    else:
-                        create_file(sbatch_text, sbatch_path)
-                        created.append(sbatch_path)
-
-            # Safe constrained algorithms
-            for algo in args.safe_algos:
-                for use_all_obs in args.all_obs_usage:
-                    for use_cost in args.cost_usage:
-                        for br in args.budget_ratios:
-                            if not valid_combo(algo, bool(use_cost), bool(use_all_obs)):
+                    for sd_reg in args.sd_regulizer:
+                        for no_zero_act in args.no_zero_act:
+                            use_cost = False
+                            if not valid_combo(algo, use_cost, bool(use_all_obs), bool(sd_reg), bool(no_zero_act)):
                                 continue
-                            budget = compute_budget(args.max_episode_steps, br, feature_costs)
                             py_args = dict(
                                 algo=algo,
                                 env_id=env_id,
@@ -196,14 +170,16 @@ def main():
                                 use_all_obs=bool(use_all_obs),
                                 eval_num_episodes=args.eval_num_episodes,
                                 total_steps=args.total_steps,
-                                budget=budget,
+                                budget=compute_budget(args.max_episode_steps, 1.0, feature_costs),
                                 feature_cost=[f"{c:.4f}" for c in feature_costs.tolist()],
                                 max_episode_steps=args.max_episode_steps,
                                 steps_per_epoch=args.steps_per_epoch,
                                 seed=seed,
+                                sd_regulizer=bool(sd_reg),
+                                no_zero_act=bool(no_zero_act),
                             )
                             python_cmd = build_python_command(args.run_py, py_args)
-                            fname = f"{algo}_{env_id}_cost{int(use_cost)}_all{int(use_all_obs)}_B{int(budget)}_S{seed}"
+                            fname = f"{algo}_{env_id}_cost{int(use_cost)}_all{int(use_all_obs)}_Budget{int(py_args['budget'])}_Seed{seed}_sd{int(sd_reg)}_nozero{int(no_zero_act)}"
                             sbatch_text = format_sbatch(template=sbatch_template, job_name=fname, python_cmd=python_cmd)
                             if args.tag:
                                 fname = f"{fname}_{args.tag}"
@@ -214,6 +190,44 @@ def main():
                             else:
                                 create_file(sbatch_text, sbatch_path)
                                 created.append(sbatch_path)
+
+            # Safe constrained algorithms
+            for algo in args.safe_algos:
+                for use_all_obs in args.all_obs_usage:
+                    for use_cost in args.cost_usage:
+                        for br in args.budget_ratios:
+                            for sd_reg in args.sd_regulizer:
+                                for no_zero_act in args.no_zero_act:
+                                    if not valid_combo(algo, bool(use_cost), bool(use_all_obs), bool(sd_reg), bool(no_zero_act)):
+                                        continue
+                                    budget = compute_budget(args.max_episode_steps, br, feature_costs)
+                                    py_args = dict(
+                                        algo=algo,
+                                        env_id=env_id,
+                                        use_cost=bool(use_cost),
+                                        use_all_obs=bool(use_all_obs),
+                                        eval_num_episodes=args.eval_num_episodes,
+                                        total_steps=args.total_steps,
+                                        budget=budget,
+                                        feature_cost=[f"{c:.4f}" for c in feature_costs.tolist()],
+                                        max_episode_steps=args.max_episode_steps,
+                                        steps_per_epoch=args.steps_per_epoch,
+                                        seed=seed,
+                                        sd_regulizer=bool(sd_reg),
+                                        no_zero_act=bool(no_zero_act),
+                                    )
+                                    python_cmd = build_python_command(args.run_py, py_args)
+                                    fname = f"{algo}_{env_id}_cost{int(use_cost)}_all{int(use_all_obs)}_B{int(budget)}_S{seed}_sd{int(sd_reg)}_nozero{int(no_zero_act)}"
+                                    sbatch_text = format_sbatch(template=sbatch_template, job_name=fname, python_cmd=python_cmd)
+                                    if args.tag:
+                                        fname = f"{fname}_{args.tag}"
+                                    sbatch_path = out_dir / f"{fname}.sh"
+
+                                    if args.dry_run:
+                                        print(python_cmd)
+                                    else:
+                                        create_file(sbatch_text, sbatch_path)
+                                        created.append(sbatch_path)
 
     if args.dry_run:
         print("[dry-run] Done.")

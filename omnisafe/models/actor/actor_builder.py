@@ -127,7 +127,7 @@ class ActorBuilder:
                 disc_act_space=self._disc_act_space,
                 hidden_sizes=self._hidden_sizes,
                 activation=self._activation,
-                shared_hidden_sizes=[64, 64],
+                shared_hidden_sizes=[256, 256],
                 weight_initialization_mode=self._weight_initialization_mode,
             )
         raise NotImplementedError(

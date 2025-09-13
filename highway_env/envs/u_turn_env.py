@@ -30,7 +30,7 @@ class UTurnEnv(AbstractEnv):
                 "high_speed_reward": 0.4,  # Reward received for maintaining cruising speed.
                 "reward_speed_range": [8, 24],
                 "normalize_reward": True,
-                "offroad_terminal": True,
+                "offroad_terminal": False,
             }
         )
         return config

@@ -220,6 +220,7 @@ class OnPolicyBuffer(BaseBuffer):  # pylint: disable=too-many-instance-attribute
         data = {
             'obs': self.data['obs'],
             'act': self.data['act'],
+            'unmasked_observation': self.data['unmasked_observation'],
             'target_value_r': self.data['target_value_r'],
             'adv_r': self.data['adv_r'],
             'logp': self.data['logp'],

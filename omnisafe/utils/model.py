@@ -75,6 +75,7 @@ def build_mlp_network(
     activation: Activation,
     output_activation: Activation = 'identity',
     weight_initialization_mode: InitFunction = 'kaiming_uniform',
+    norm: bool = False,
 ) -> nn.Module:
     """Build the MLP network.
 
@@ -103,9 +104,18 @@ def build_mlp_network(
     activation_fn = get_activation(activation)
     output_activation_fn = get_activation(output_activation)
     layers = []
-    for j in range(len(sizes) - 1):
-        act_fn = activation_fn if j < len(sizes) - 2 else output_activation_fn
-        affine_layer = nn.Linear(sizes[j], sizes[j + 1])
-        initialize_layer(weight_initialization_mode, affine_layer)
-        layers += [affine_layer, act_fn()]
+    n_layers = len(sizes) - 1  # number of Linear blocks to build
+    for i, (input_dim, out_dim) in enumerate(zip(sizes[:-1], sizes[1:])):  # iterate (in,out) pairs
+        last = (i == n_layers - 1)  # is this the final (output) layer?
+        use_ln = norm and not last  # apply BN only to hidden layers
+
+        linear = nn.Linear(input_dim, out_dim, bias=not use_ln)  # drop bias if LN (redundant with BN)
+        initialize_layer(weight_initialization_mode, linear)  # apply chosen init to this layer
+        layers.append(linear)  # add the affine transform
+
+        if use_ln:
+            layers.append(nn.LayerNorm(out_dim))  # normalize features: shape (N, C)
+
+        layers.append((output_activation_fn if last else activation_fn)())  # add activation (output vs hidden)
+
     return nn.Sequential(*layers)

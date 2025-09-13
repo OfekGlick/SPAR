@@ -45,7 +45,9 @@ defaults:
     # normalize cost
     cost_normalize: False
     # normalize observation
-    obs_normalize: True
+    obs_normalize: False
+    # normalize observation by modality
+    obs_modality_normalize: False
     # early stop when kl divergence is bigger than target kl
     kl_early_stop: False
     # use max gradient norm
@@ -84,6 +86,12 @@ defaults:
     cost_limit: 25
     # The sub-sampling rate of the observation
     fvp_sample_freq: 1
+    # SD Regulizer flag
+    sd_regulizer: False
+    # sd regulizer coefficient
+    sd_regulizer_coeff: 0.1
+    # Flag to activate the regulizer for the "no-zero" constraint
+    no_zero_act: False
   # logger configurations
   logger_cfgs:
     # use wandb for logging

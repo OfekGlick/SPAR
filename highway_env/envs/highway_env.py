@@ -46,7 +46,7 @@ class HighwayEnv(AbstractEnv):
                 "lane_change_reward": 0,  # The reward received at each lane change action.
                 "reward_speed_range": [20, 30],
                 "normalize_reward": True,
-                "offroad_terminal": True,
+                "offroad_terminal": False,
             }
         )
         return config

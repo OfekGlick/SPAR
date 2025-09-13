@@ -45,7 +45,9 @@ defaults:
     # normalize cost
     cost_normalize: False
     # normalize observation
-    obs_normalize: True
+    obs_normalize: False
+    # normalize observation by modality
+    obs_modality_normalize: False
     # early stop when kl divergence is bigger than target kl
     kl_early_stop: True
     # use max gradient norm
@@ -74,6 +76,16 @@ defaults:
     penalty_coef: 0.0
     # use cost
     use_cost: False
+    # SD Regulizer flag
+    sd_regulizer: False
+    # sd regulizer coefficient
+    sd_regulizer_coeff: 0.1
+    # Flag to activate the regulizer for the "no-zero" constraint
+    no_zero_act: False
+    # zero barrier coefficient for constraint handling
+    zero_barrier_coef: 0.1
+    # zero barrier epsilon for numerical stability
+    zero_barrier_eps: 1e-8
   # logger configurations
   logger_cfgs:
     # use wandb for logging
@@ -105,7 +117,7 @@ defaults:
     # actor network configurations
     actor:
       # hidden layer sizes
-      hidden_sizes: [64, 64]
+      hidden_sizes: [256, 256, 256]
       # activation function
       activation: tanh
       # out_activation: tanh
@@ -113,7 +125,7 @@ defaults:
       lr: 0.0003
     critic:
       # hidden layer sizes
-      hidden_sizes: [64, 64]
+      hidden_sizes: [256, 256, 256]
       # activation function
       activation: tanh
       # learning rate

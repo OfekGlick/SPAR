@@ -20,6 +20,7 @@ from typing import Any
 
 import numpy as np
 import torch
+import torch.nn as nn
 from gymnasium import spaces
 import gymnasium as gym
 from omnisafe.common import Normalizer
@@ -53,9 +54,9 @@ class TimeLimit(Wrapper):
         self._time_limit: int = time_limit
 
     def reset(
-        self,
-        seed: int | None = None,
-        options: dict[str, Any] | None = None,
+            self,
+            seed: int | None = None,
+            options: dict[str, Any] | None = None,
     ) -> tuple[torch.Tensor, dict[str, Any]]:
         """Reset the environment.
 
@@ -74,8 +75,8 @@ class TimeLimit(Wrapper):
         return super().reset(seed=seed, options=options)
 
     def step(
-        self,
-        action: torch.Tensor,
+            self,
+            action: torch.Tensor,
     ) -> tuple[
         torch.Tensor,
         torch.Tensor,
@@ -102,8 +103,6 @@ class TimeLimit(Wrapper):
         """
         obs, reward, cost, terminated, truncated, info = super().step(action)
 
-        if truncated:
-            ofek = 5
 
         self._time += 1
         truncated = torch.tensor(
@@ -133,8 +132,8 @@ class AutoReset(Wrapper):
         assert self.num_envs == 1, 'AutoReset only supports single environment'
 
     def step(
-        self,
-        action: torch.Tensor,
+            self,
+            action: torch.Tensor,
     ) -> tuple[
         torch.Tensor,
         torch.Tensor,
@@ -166,7 +165,7 @@ class AutoReset(Wrapper):
         if terminated or truncated:
             new_obs, new_info = self.reset()
             assert (
-                'final_observation' not in new_info
+                    'final_observation' not in new_info
             ), 'info dict cannot contain key "final_observation" '
             assert 'final_info' not in new_info, 'info dict cannot contain key "final_info" '
 
@@ -205,8 +204,8 @@ class ObsNormalize(Wrapper):
             self._obs_normalizer = Normalizer(self.observation_space.shape, clip=5).to(self._device)
 
     def step(
-        self,
-        action: torch.Tensor,
+            self,
+            action: torch.Tensor,
     ) -> tuple[
         torch.Tensor,
         torch.Tensor,
@@ -251,9 +250,9 @@ class ObsNormalize(Wrapper):
         return obs, reward, cost, terminated, truncated, info
 
     def reset(
-        self,
-        seed: int | None = None,
-        options: dict[str, Any] | None = None,
+            self,
+            seed: int | None = None,
+            options: dict[str, Any] | None = None,
     ) -> tuple[torch.Tensor, dict[str, Any]]:
         """Reset the environment and returns an initial observation.
 
@@ -287,6 +286,166 @@ class ObsNormalize(Wrapper):
         return saved
 
 
+class ModalityObsNormalize(Wrapper):
+    """
+    Per-modality observation normalization using OmniSafe's Normalizer per modality,
+    contained entirely within the wrapper (no extra helper classes).
+
+    - Expects flat Box obs of shape (D,) or (1, D).
+    - `modality_to_span`: dict name -> (start, end) indices over the *feature* part.
+    - If the last `mask_length` dims are a binary mask, they are preserved.
+    - Only masked-on modalities are updated & normalized.
+    - `save()` exposes state under 'obs_normalizer' (state_dict of ModuleDict).
+    """
+
+    def __init__(
+        self,
+        env: CMDP,
+        device: torch.device,
+        modality_to_span: dict[str, tuple[int, int]],
+        *,
+        mask_length: int = 0,
+        clip_value: float = 5.0,
+        update_stats: bool = True,
+        # If provided, should be a state_dict previously saved under 'obs_normalizer'
+        norm_per_mod_state = None,
+    ) -> None:
+        super().__init__(env=env, device=device)
+        assert self.num_envs == 1, 'This normalizer supports single env only.'
+        assert isinstance(self.observation_space, spaces.Box), 'Observation space must be Box.'
+        assert len(self.observation_space.shape) == 1, 'Expect flat 1-D observation.'
+
+        # --- config / dims ---
+        self.modality_to_span = dict(sorted(modality_to_span.items(), key=lambda kv: kv[1][0]))
+        self.modalities = list(self.modality_to_span.keys())
+        self.mask_length = int(mask_length)
+        self.clip_value = float(clip_value)
+        self.update_stats_enabled = bool(update_stats)
+
+        total_dim = int(self.observation_space.shape[0])
+        feature_dim = total_dim - self.mask_length
+        last_end = max(end for (_, end) in self.modality_to_span.values())
+        assert last_end <= feature_dim, 'Modality spans exceed (D - mask_length).'
+
+        # --- build per-modality normalizers, contained inside the wrapper ---
+        if norm_per_mod_state is None:
+            self._per_mod_norm = nn.ModuleDict()
+            for mod, (s, e) in self.modality_to_span.items():
+                seg_len = int(e - s)
+                self._per_mod_norm[mod] = Normalizer(shape=(seg_len,), clip=self.clip_value)
+            self._per_mod_norm.to(self._device)
+
+        if norm_per_mod_state is not None:
+            self._per_mod_norm = norm_per_mod_state
+            self._per_mod_norm.to(self._device)
+        # respect initial update mode
+        self._set_train_mode(self.update_stats_enabled)
+
+    # ---------------- public controls ----------------
+    def freeze_stats(self, freeze: bool = True) -> None:
+        """Freeze/unfreeze running-stat updates (call True before eval)."""
+        self.update_stats_enabled = not freeze
+        self._set_train_mode(not freeze)
+
+    def _set_train_mode(self, train: bool) -> None:
+        self._per_mod_norm.train(train)
+
+    # ---------------- internals ----------------
+    def _split_features_and_mask(self, obs_t: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor | None]:
+        if self.mask_length == 0:
+            return obs_t, None
+        return obs_t[..., :-self.mask_length], obs_t[..., -self.mask_length:]
+
+    def _normalize_features(self, features: torch.Tensor, mask: torch.Tensor | None) -> torch.Tensor:
+        """
+        Apply per-modality normalization with mask-awareness.
+        features: (F,) or (B,F)
+        mask:     (M,) or (B,M) binary (if None -> treat as all ones)
+        """
+        assert features.ndim in (1, 2)
+        batched = (features.ndim == 2)
+        B = features.shape[0] if batched else 1
+
+        if mask is None:
+            mask = torch.ones((B, len(self.modalities)), dtype=torch.bool, device=features.device) if batched else \
+                   torch.ones((len(self.modalities),), dtype=torch.bool, device=features.device)
+
+        feats = features if batched else features.unsqueeze(0)
+        ms = mask if (batched or mask.ndim == 2) else mask.unsqueeze(0)
+
+        outs = []
+        for i, mod in enumerate(self.modalities):
+            s, e = self.modality_to_span[mod]
+            seg = feats[..., s:e]  # (B, seg_len)
+            m_i = ms[..., i]
+            if m_i.dtype != torch.bool:
+                m_i = m_i > 0.5
+
+            seg_out = seg.clone()
+            if m_i.any():
+                seg_out[m_i] = self._per_mod_norm[mod].normalize(seg[m_i])
+            # else passthrough unchanged
+            outs.append(seg_out)
+
+        out = torch.cat(outs, dim=-1)
+        return out if batched else out.squeeze(0)
+
+    def _process_observation(self, obs_t: torch.Tensor) -> torch.Tensor:
+        """Normalize features; keep appended mask if present; preserve (1,D) leading dim."""
+        had_leading_batch = (obs_t.ndim == 2)
+        x = obs_t if not had_leading_batch else obs_t.squeeze(0)
+
+        features_t, mask_t = self._split_features_and_mask(x)
+        features_norm = self._normalize_features(features_t, mask_t)
+
+        if mask_t is not None:
+            obs_norm = torch.cat([features_norm, mask_t], dim=-1)
+        else:
+            obs_norm = features_norm
+
+        return obs_norm if not had_leading_batch else obs_norm.unsqueeze(0)
+
+    # ---------------- Wrapper overrides ----------------
+    def step(self, action: torch.Tensor):
+        obs, reward, cost, terminated, truncated, info = super().step(action)
+        obs, reward, cost, terminated, truncated = (
+            torch.as_tensor(x, dtype=torch.float32, device=self._device)
+            for x in (obs, reward, cost, terminated, truncated)
+        )
+        info['original_obs'] = obs
+        obs = self._process_observation(obs)
+
+        if 'unmasked_observation' in info:
+            info['unmasked_observation'] = self._process_observation(
+                torch.as_tensor(info['unmasked_observation'], dtype=torch.float32, device=self._device)
+            )
+
+        if 'final_observation' in info:
+            fin = torch.as_tensor(info['final_observation'], dtype=torch.float32, device=self._device)
+            info['original_final_observation'] = fin
+            info['final_observation'] = self._process_observation(fin)
+
+        return obs, reward, cost, terminated, truncated, info
+
+    def reset(self, seed: int | None = None, options: dict | None = None):
+        obs, info = super().reset(seed=seed, options=options)
+        obs = torch.as_tensor(obs, dtype=torch.float32, device=self._device)
+        info['original_obs'] = obs
+        obs = self._process_observation(obs)
+        info['unmasked_observation'] = obs.clone()
+        return obs, info
+
+    # --------- save/load (compatible key) ---------
+    def save(self) -> dict[str, dict]:
+        """
+        Return a dict that includes our per-modality normalizers under the same key name
+        used elsewhere. We store a STATE DICT (not a module) for portability.
+        """
+        saved = super().save()
+        saved['obs_normalizer'] = self._per_mod_norm
+        return saved
+
+
 class RewardNormalize(Wrapper):
     """Normalize the reward.
 
@@ -312,8 +471,8 @@ class RewardNormalize(Wrapper):
             self._reward_normalizer = Normalizer((), clip=5).to(self._device)
 
     def step(
-        self,
-        action: torch.Tensor,
+            self,
+            action: torch.Tensor,
     ) -> tuple[
         torch.Tensor,
         torch.Tensor,
@@ -385,8 +544,8 @@ class CostNormalize(Wrapper):
             self._cost_normalizer = Normalizer((), clip=5).to(self._device)
 
     def step(
-        self,
-        action: torch.Tensor,
+            self,
+            action: torch.Tensor,
     ) -> tuple[
         torch.Tensor,
         torch.Tensor,
@@ -449,11 +608,11 @@ class ActionScale(Wrapper):
     """
 
     def __init__(
-        self,
-        env: CMDP,
-        device: torch.device,
-        low: float,
-        high: float,
+            self,
+            env: CMDP,
+            device: torch.device,
+            low: float,
+            high: float,
     ) -> None:
         """Initialize an instance of :class:`ActionScale`."""
         super().__init__(env=env, device=device)
@@ -498,8 +657,8 @@ class ActionScale(Wrapper):
         )
 
     def step(
-        self,
-        action: torch.Tensor,
+            self,
+            action: torch.Tensor,
     ) -> tuple[
         torch.Tensor,
         torch.Tensor,
@@ -526,12 +685,12 @@ class ActionScale(Wrapper):
         """
         if isinstance(self.action_space, spaces.Box):
             action = self._old_min_action + (self._old_max_action - self._old_min_action) * (
-                action - self._min_action
+                    action - self._min_action
             ) / (self._max_action - self._min_action)
         elif isinstance(self.action_space, spaces.Tuple):
             cont_action = action[0]
             cont_action = self._old_min_action + (self._old_max_action - self._old_min_action) * (
-                cont_action - self._min_action
+                    cont_action - self._min_action
             ) / (self._max_action - self._min_action)
             action = tuple((cont_action, action[1]))
         return super().step(action)
@@ -545,10 +704,10 @@ class ActionRepeat(Wrapper):
     """
 
     def __init__(
-        self,
-        env: CMDP,
-        times: int,
-        device: torch.device,
+            self,
+            env: CMDP,
+            times: int,
+            device: torch.device,
     ) -> None:
         """Initialize the wrapper.
 
@@ -562,8 +721,8 @@ class ActionRepeat(Wrapper):
         self._device = device
 
     def step(
-        self,
-        action: torch.Tensor,
+            self,
+            action: torch.Tensor,
     ) -> tuple[
         torch.Tensor,
         torch.Tensor,
@@ -611,8 +770,8 @@ class Unsqueeze(Wrapper):
         assert isinstance(self.observation_space, spaces.Box), 'Observation space must be Box'
 
     def step(
-        self,
-        action: torch.Tensor,
+            self,
+            action: torch.Tensor,
     ) -> tuple[
         torch.Tensor,
         torch.Tensor,
@@ -656,9 +815,9 @@ class Unsqueeze(Wrapper):
         return obs, reward, cost, terminated, truncated, info
 
     def reset(
-        self,
-        seed: int | None = None,
-        options: dict[str, Any] | None = None,
+            self,
+            seed: int | None = None,
+            options: dict[str, Any] | None = None,
     ) -> tuple[torch.Tensor, dict[str, Any]]:
         """Reset the environment and returns a new observation.
 

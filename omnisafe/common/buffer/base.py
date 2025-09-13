@@ -81,7 +81,7 @@ class BaseBuffer(ABC):
 
         self.data: dict[str, torch.Tensor] = {
             'obs': obs_buf,
-            'original_observation': obs_buf.clone(),
+            'unmasked_observation': obs_buf.clone(),
             'act': act_buf,
             'reward': torch.zeros(size, dtype=torch.float32, device=device),
             'cost': torch.zeros(size, dtype=torch.float32, device=device),

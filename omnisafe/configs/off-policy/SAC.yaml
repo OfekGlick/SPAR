@@ -48,6 +48,8 @@ defaults:
     cost_normalize: False
     # normalize observation
     obs_normalize: False
+    # normalize observation by modality
+    obs_modality_normalize: False
     # max gradient norm
     max_grad_norm: 40
     # use critic norm
@@ -76,10 +78,16 @@ defaults:
     auto_alpha: False
     # use cost
     use_cost: False
+    sd_regulizer: False
+    # sd regulizer coefficient
+    sd_regulizer_coeff: 0.1
+    # Flag to activate the regulizer for the "no-zero" constraint
+    no_zero_act: False
     # zero barrier coefficient for constraint handling
     zero_barrier_coef: 0.1
     # zero barrier epsilon for numerical stability
     zero_barrier_eps: 1e-8
+
   # logger configurations
   logger_cfgs:
     # use wandb for logging

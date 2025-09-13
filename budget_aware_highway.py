@@ -7,7 +7,6 @@ import random
 
 import torch
 
-
 from highway_env.envs.common.observation import observation_factory
 
 # OmniSafe CMDP registration
@@ -37,7 +36,7 @@ class BudgetAwareHighway(gym.Wrapper, CMDP):
         "budget-aware-intersection-v0",
         "budget-aware-intersection-v1",
     ]
-    need_auto_reset_wrapper = True
+    need_auto_reset_wrapper = False
     need_time_limit_wrapper = True
 
     DEFAULT_TYPES = [
@@ -61,7 +60,6 @@ class BudgetAwareHighway(gym.Wrapper, CMDP):
             *,
             use_all_obs: bool = False,
             sensor_dropout_rescale: bool = True,
-            append_mask_to_obs: bool = True,
             modality_costs: Dict[str, float] = None,
             cast_dtype: np.dtype = np.float32,
             max_episode_steps: int = None,
@@ -99,7 +97,6 @@ class BudgetAwareHighway(gym.Wrapper, CMDP):
         # ── user-config ────────────────────────────────────────────────────────────
         self.use_all_obs = bool(use_all_obs)
         self.sensor_dropout_rescale = bool(sensor_dropout_rescale)
-        self.append_mask_to_obs = not bool(use_all_obs)
         self.cast_dtype = cast_dtype
         self._num_envs = kwargs.pop('num_envs')
         # ── build multi‑observation (concat) ──────────────────────────────────────
@@ -153,12 +150,8 @@ class BudgetAwareHighway(gym.Wrapper, CMDP):
         self._flat_dim = base_low.size
         self._num_modalities = len(self.obs_names)
 
-        # Observation space (optionally append mask copy)
-        if self.append_mask_to_obs:
-            low = np.concatenate([base_low, np.zeros(self._num_modalities, dtype=base_low.dtype)], axis=0)
-            high = np.concatenate([base_high, np.ones(self._num_modalities, dtype=base_high.dtype)], axis=0)
-        else:
-            low, high = base_low, base_high
+        low = np.concatenate([base_low, np.zeros(self._num_modalities, dtype=base_low.dtype)], axis=0)
+        high = np.concatenate([base_high, np.ones(self._num_modalities, dtype=base_high.dtype)], axis=0)
         self.observation_space = spaces.Box(low=low, high=high, dtype=low.dtype)
 
         # ── Action space ───────────────────────────────────────────────────────────
@@ -228,14 +221,10 @@ class BudgetAwareHighway(gym.Wrapper, CMDP):
         feat_mask01 = feat_mask01.astype(flat.dtype, copy=False)
         if self.sensor_dropout_rescale:
             kept = int(feat_mask01.sum())
-            if kept == 0:
-                # force keep largest modality to avoid empty input
-                largest = max(self.obs_names, key=lambda n: self.mod_sizes[n])
-                s, e = self.mapping[largest]
-                feat_mask01[s:e] = 1.0
-                kept = int(feat_mask01.sum())
-            # TODO: check what is better, rescaling by the number of kept modalities or by the flat_dim
-            alpha = float(self._flat_dim) / float(kept)
+            try:
+                alpha = float(self._flat_dim) / float(kept)
+            except ZeroDivisionError:
+                alpha = 1.0
             gated = flat * feat_mask01 * alpha
         else:
             gated = flat * feat_mask01
@@ -252,11 +241,11 @@ class BudgetAwareHighway(gym.Wrapper, CMDP):
         obs, info = self.env.reset(**kwargs)
         flat = self._concat_raw_obs()
         out = flat
-        if self.append_mask_to_obs:
-            mask0 = np.ones(self._num_modalities, dtype=flat.dtype)
-            out = np.concatenate([flat, mask0], axis=0).astype(self.observation_space.dtype, copy=False)
+        mask0 = np.ones(self._num_modalities, dtype=flat.dtype)
+        out = np.concatenate([flat, mask0], axis=0).astype(self.observation_space.dtype, copy=False)
         out = torch.as_tensor(out, dtype=torch.float32).to(self._device)
-        # Return torch tensors as done in your existing CMDP wrapper
+        info['unmasked_observation'] = out.clone()
+        info['sensor_mask'] = mask0
         return out, info
 
     def step(self, action: Union[Tuple[Any, Any], Any]):
@@ -266,9 +255,7 @@ class BudgetAwareHighway(gym.Wrapper, CMDP):
             flat = self._concat_raw_obs()
             out = flat
             m_mod01 = np.ones(self._num_modalities, dtype=flat.dtype)
-            if self.append_mask_to_obs:
-                out = np.concatenate([flat, m_mod01], axis=0).astype(self.observation_space.dtype, copy=False)
-
+            out = np.concatenate([out, m_mod01.astype(out.dtype)], axis=0).astype(self.observation_space.dtype)
             # CMDP step signature: (obs, reward, cost, terminated, truncated, info)
             rew = float(r)
             cost = self._mask_cost(m_mod01)
@@ -277,7 +264,7 @@ class BudgetAwareHighway(gym.Wrapper, CMDP):
             info['original_reward'] = torch.as_tensor(rew, dtype=torch.float32)
             info['original_cost'] = torch.as_tensor(cost, dtype=torch.float32)
             returned_obs = torch.as_tensor(out, dtype=torch.float32).to(self._device)
-            info['original_observation'] = returned_obs.clone()  # <--- Save original obs
+            info['unmasked_observation'] = returned_obs.clone()  # <--- Save original obs
 
             return (
                 returned_obs,
@@ -295,12 +282,6 @@ class BudgetAwareHighway(gym.Wrapper, CMDP):
         cont_action = self._to_numpy(action[0])
         mod_mask = self._to_numpy(action[1]).astype(np.int64).reshape(-1)
 
-        # Safety: avoid all-zero mask ➜ keep largest modality
-        if mod_mask.sum() == 0:
-            largest = max(self.obs_names, key=lambda n: self.mod_sizes[n])
-            i = self.obs_names.index(largest)
-            mod_mask[i] = 1
-
         # Step base env
         base_obs, r, term, trunc, info = self.env.step(cont_action)
 
@@ -313,19 +294,19 @@ class BudgetAwareHighway(gym.Wrapper, CMDP):
         step_cost = self._mask_cost(mod_mask.astype(np.float32))
 
         # Compose final observation
-        if self.append_mask_to_obs:
-            out = np.concatenate([gated, mod_mask.astype(gated.dtype)], axis=0).astype(self.observation_space.dtype,
-                                                                                       copy=False)
-        else:
-            out = gated.astype(self.observation_space.dtype, copy=False)
+        out = np.concatenate(
+            [gated, mod_mask.astype(gated.dtype)], axis=0
+        ).astype(self.observation_space.dtype,copy=False)
+
 
         # Info & returns (CMDP)
         info = dict(info)
         info["sensor_mask"] = mod_mask.astype(np.float32)  # store *modality*-level mask
         info["original_step_reward"] = float(r)
         info["original_step_cost"] = float(step_cost)
-        returned_obs = torch.as_tensor(out, dtype=torch.float32).to(self._device)
-        info["original_observation"] = returned_obs.clone()  # <--- Save original flat obs
+        original_obs_flat = np.concatenate([flat, np.ones(self._num_modalities, dtype=flat.dtype)],)
+        returned_obs = torch.as_tensor(original_obs_flat, dtype=torch.float32).to(self._device)
+        info["unmasked_observation"] = returned_obs.clone()  # <--- Save original flat obs
 
         return (
             torch.as_tensor(out, dtype=torch.float32).to(self._device),

@@ -26,6 +26,7 @@ class MultiHeadActor(Actor):
             sizes=[self._obs_dim, *shared_hidden_sizes],
             activation=activation,
             weight_initialization_mode=weight_initialization_mode,
+            norm=True,
         )
 
         # Continuous action head
@@ -33,6 +34,8 @@ class MultiHeadActor(Actor):
             sizes=[shared_hidden_sizes[-1], *hidden_sizes, cont_act_space.shape[0]],
             activation=activation,
             weight_initialization_mode=weight_initialization_mode,
+            norm=True,
+
         )
         self.log_std = nn.Parameter(torch.zeros(cont_act_space.shape[0]))
 
@@ -41,6 +44,7 @@ class MultiHeadActor(Actor):
             sizes=[shared_hidden_sizes[-1], *hidden_sizes, disc_act_space.shape[0]],
             activation=activation,
             weight_initialization_mode=weight_initialization_mode,
+            norm=True,
         )
 
         self.cont_action_space = cont_act_space

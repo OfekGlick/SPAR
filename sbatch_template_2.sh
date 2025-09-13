@@ -13,8 +13,8 @@
 #SBATCH -p clair
 #SBATCH -w clair1,plato1,plato2,bruno1,bruno2,bruno3,bruno4,nlp-l40-1,nlp-l40-2,tdk-bm4
 
-#SBATCH -o sbatch_runs/%N_%j_{job}_out.txt       # stdout goes here
-#SBATCH -e sbatch_runs/%N_%j_{job}_err.txt       # stderr goes here
+#SBATCH -o logs/%N_%j_{job}_out.txt       # stdout goes here
+#SBATCH -e logs/%N_%j_{job}_err.txt       # stderr goes here
 
 #SBATCH --mail-type=fail                               # send email if job fails
 #SBATCH --mail-user=ofek.glick@campus.technion.ac.il

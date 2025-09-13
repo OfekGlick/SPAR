@@ -109,7 +109,6 @@ class PolicyGradient(BaseAlgo):
             ).to(self._device)
             print("Not using MultiHeadActor")
 
-
         if distributed.world_size() > 1:
             distributed.sync_params(self._actor_critic)
 
@@ -197,7 +196,12 @@ class PolicyGradient(BaseAlgo):
 
         what_to_save: dict[str, Any] = {}
         what_to_save['pi'] = self._actor_critic.actor
+        assert not (
+                self._cfgs.algo_cfgs.obs_normalize and self._cfgs.algo_cfgs.obs_modality_normalize), "obs_normalize and obs_modality_normalize are mutually exclusive"
         if self._cfgs.algo_cfgs.obs_normalize:
+            obs_normalizer = self._env.save()['obs_normalizer']
+            what_to_save['obs_normalizer'] = obs_normalizer
+        if self._cfgs.algo_cfgs.obs_modality_normalize:
             obs_normalizer = self._env.save()['obs_normalizer']
             what_to_save['obs_normalizer'] = obs_normalizer
         self._logger.setup_torch_saver(what_to_save)
@@ -206,8 +210,11 @@ class PolicyGradient(BaseAlgo):
         if isinstance(self._env.action_space, gymnasium.spaces.tuple.Tuple):
             for sensor_name in range(self._env.action_space[1].n):
                 self._logger.register_key(f'Metrics/EpActivationSensor_{sensor_name}')
-            self._logger.register_key('Reg/ZeroBarrier', delta=True)
-            self._logger.register_key('Train/ZeroProbMean', min_and_max=True)
+            if self._cfgs.algo_cfgs.no_zero_act:
+                self._logger.register_key('Reg/ZeroBarrier', delta=True)
+                self._logger.register_key('Train/ZeroProbMean', min_and_max=True)
+            if self._cfgs.algo_cfgs.sd_regulizer:
+                self._logger.register_key('Loss/Aux', delta=True)
 
         self._logger.register_key('Metrics/EpRet', window_length=50)
         self._logger.register_key('Metrics/EpCost', window_length=50)
@@ -309,8 +316,7 @@ class PolicyGradient(BaseAlgo):
 
             # save model to disk
             if (epoch + 1) % self._cfgs.logger_cfgs.save_model_freq == 0 or (
-                    epoch + 1
-            ) == self._cfgs.train_cfgs.epochs:
+                    epoch + 1) == self._cfgs.train_cfgs.epochs:
                 self._logger.torch_save()
 
         ep_ret = self._logger.get_stats('Metrics/EpRet')[0]
@@ -359,7 +365,7 @@ class PolicyGradient(BaseAlgo):
         #. Repeat steps 2, 3, 4 until the KL divergence violates the limit.
         """
         data = self._buf.get()
-        obs, act, logp, target_value_r, target_value_c, adv_r, adv_c = (
+        obs, act, logp, target_value_r, target_value_c, adv_r, adv_c, unmasked_observation = (
             data['obs'],
             data['act'],
             data['logp'],
@@ -367,13 +373,14 @@ class PolicyGradient(BaseAlgo):
             data['target_value_c'],
             data['adv_r'],
             data['adv_c'],
+            data['unmasked_observation'],
         )
 
         original_obs = obs
         old_distribution = self._actor_critic.actor(obs)
 
         dataloader = DataLoader(
-            dataset=TensorDataset(obs, act, logp, target_value_r, target_value_c, adv_r, adv_c),
+            dataset=TensorDataset(obs, act, logp, target_value_r, target_value_c, adv_r, adv_c, unmasked_observation),
             batch_size=self._cfgs.algo_cfgs.batch_size,
             shuffle=True,
         )
@@ -390,11 +397,12 @@ class PolicyGradient(BaseAlgo):
                     target_value_c,
                     adv_r,
                     adv_c,
+                    unmasked_observation,
             ) in dataloader:
                 self._update_reward_critic(obs, target_value_r)
                 if self._cfgs.algo_cfgs.use_cost:
                     self._update_cost_critic(obs, target_value_c)
-                self._update_actor(obs, act, logp, adv_r, adv_c)
+                self._update_actor(obs, act, logp, adv_r, adv_c, unmasked_observation)
 
             new_distribution = self._actor_critic.actor(original_obs)
 
@@ -517,6 +525,7 @@ class PolicyGradient(BaseAlgo):
             logp: torch.Tensor,
             adv_r: torch.Tensor,
             adv_c: torch.Tensor,
+            unmasked_observation: torch.Tensor,
     ) -> None:
         """Update policy network under a double for loop.
 
@@ -538,7 +547,11 @@ class PolicyGradient(BaseAlgo):
             adv_c (torch.Tensor): The ``cost_advantage`` sampled from buffer.
         """
         adv = self._compute_adv_surrogate(adv_r, adv_c)
-        loss = self._loss_pi(obs, act, logp, adv)
+        if self._cfgs.algo_cfgs.sd_regulizer:
+            loss = self._loss_pi(obs, act, logp, adv, unmasked_observation=unmasked_observation)
+        else:
+            loss = self._loss_pi(obs, act, logp, adv)
+
         self._actor_critic.actor_optimizer.zero_grad()
         loss.backward()
         if self._cfgs.algo_cfgs.use_max_grad_norm:

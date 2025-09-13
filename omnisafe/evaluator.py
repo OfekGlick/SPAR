@@ -23,6 +23,7 @@ from typing import Any
 
 import numpy as np
 import torch
+import torch.nn as nn
 from gymnasium.spaces import Box
 from gymnasium.utils.save_video import save_video
 
@@ -37,7 +38,7 @@ from omnisafe.algorithms.model_based.planner import (
 )
 from omnisafe.common import Normalizer
 from omnisafe.envs.core import CMDP, make
-from omnisafe.envs.wrapper import ActionRepeat, ActionScale, ObsNormalize, TimeLimit
+from omnisafe.envs.wrapper import ActionRepeat, ActionScale, ObsNormalize, TimeLimit, ModalityObsNormalize
 from omnisafe.models.actor import ActorBuilder
 from omnisafe.models.actor_critic import ConstraintActorCritic, ConstraintActorQCritic
 from omnisafe.models.base import Actor
@@ -63,15 +64,15 @@ class Evaluator:  # pylint: disable=too-many-instance-attributes
 
     # pylint: disable-next=too-many-arguments
     def __init__(
-        self,
-        env: CMDP | None = None,
-        actor: Actor | None = None,
-        actor_critic: ConstraintActorCritic | ConstraintActorQCritic | None = None,
-        dynamics: EnsembleDynamicsModel | None = None,
-        planner: (
-            CEMPlanner | ARCPlanner | SafeARCPlanner | CCEPlanner | CAPPlanner | RCEPlanner | None
-        ) = None,
-        render_mode: str = 'rgb_array',
+            self,
+            env: CMDP | None = None,
+            actor: Actor | None = None,
+            actor_critic: ConstraintActorCritic | ConstraintActorQCritic | None = None,
+            dynamics: EnsembleDynamicsModel | None = None,
+            planner: (
+                    CEMPlanner | ARCPlanner | SafeARCPlanner | CCEPlanner | CAPPlanner | RCEPlanner | None
+            ) = None,
+            render_mode: str = 'rgb_array',
     ) -> None:
         """Initialize an instance of :class:`Evaluator`."""
         self._env: CMDP | None = env
@@ -123,10 +124,10 @@ class Evaluator:  # pylint: disable=too-many-instance-attributes
 
     # pylint: disable-next=too-many-branches
     def __load_model_and_env(
-        self,
-        save_dir: str,
-        model_name: str,
-        env_kwargs: dict[str, Any],
+            self,
+            save_dir: str,
+            model_name: str,
+            env_kwargs: dict[str, Any],
     ) -> None:
         """Load the model from the save directory.
 
@@ -153,11 +154,11 @@ class Evaluator:  # pylint: disable=too-many-instance-attributes
         action_space = self._env.action_space
         if 'Saute' in self._cfgs['algo'] or 'Simmer' in self._cfgs['algo']:
             self._safety_budget = (
-                self._cfgs.algo_cfgs.safety_budget
-                * (1 - self._cfgs.algo_cfgs.saute_gamma ** self._cfgs.algo_cfgs.max_ep_len)
-                / (1 - self._cfgs.algo_cfgs.saute_gamma)
-                / self._cfgs.algo_cfgs.max_ep_len
-                * torch.ones(1)
+                    self._cfgs.algo_cfgs.safety_budget
+                    * (1 - self._cfgs.algo_cfgs.saute_gamma ** self._cfgs.algo_cfgs.max_ep_len)
+                    / (1 - self._cfgs.algo_cfgs.saute_gamma)
+                    / self._cfgs.algo_cfgs.max_ep_len
+                    * torch.ones(1)
             )
         # assert isinstance(observation_space, Box), 'The observation space must be Box.'
         # assert isinstance(action_space, Box), 'The action space must be Box.'
@@ -166,19 +167,29 @@ class Evaluator:  # pylint: disable=too-many-instance-attributes
             obs_normalizer = Normalizer(shape=observation_space.shape, clip=5)
             obs_normalizer.load_state_dict(model_params['obs_normalizer'])
             self._env = ObsNormalize(self._env, device=torch.device(device), norm=obs_normalizer)
+
+        if self._cfgs['algo_cfgs']['obs_modality_normalize']:
+            spans = self._env.obs_mapping  # {'Kinematics': (0,6), 'Lidar': (6,86), ...}
+            mask_len = len(spans)
+            per_mod_norm = nn.ModuleDict()
+            for mod, (s, e) in spans.items():
+                seg_len = int(e - s)
+                per_mod_norm[mod] = Normalizer(shape=(seg_len,), clip=5)
+            per_mod_norm.load_state_dict(model_params['obs_normalizer'])
+
+            self._env = ModalityObsNormalize(
+                self._env,
+                device=torch.device(device),
+                modality_to_span=spans,
+                mask_length=mask_len,
+                norm_per_mod_state=per_mod_norm,
+            )
+            self._env.freeze_stats(True)
+
+
         if self._env.need_time_limit_wrapper:
             self._env = TimeLimit(self._env, device=torch.device(device), time_limit=max_episode_steps)
         self._env = ActionScale(self._env, device=torch.device(device), low=-1.0, high=1.0)
-
-        # if self._cfgs['algo_cfgs']['obs_normalize']:
-        #     obs_normalizer = Normalizer(shape=observation_space.shape, clip=5)
-        #     obs_normalizer.load_state_dict(model_params['obs_normalizer'])
-        #     self._env = ObsNormalize(self._env, device=torch.device('cpu'), norm=obs_normalizer)
-        # if self._env.need_time_limit_wrapper:
-        #     self._env = TimeLimit(self._env, device=torch.device('cpu'), time_limit=max_episode_steps)
-        # self._env = ActionScale(self._env, device=torch.device('cpu'), low=-1.0, high=1.0)
-
-
 
         if hasattr(self._cfgs['algo_cfgs'], 'action_repeat'):
             self._env = ActionRepeat(
@@ -317,14 +328,14 @@ class Evaluator:  # pylint: disable=too-many-instance-attributes
 
     # pylint: disable-next=too-many-locals
     def load_saved(
-        self,
-        save_dir: str,
-        model_name: str,
-        render_mode: str = 'rgb_array',
-        camera_name: str | None = None,
-        camera_id: int | None = None,
-        width: int = 256,
-        height: int = 256,
+            self,
+            save_dir: str,
+            model_name: str,
+            render_mode: str = 'rgb_array',
+            camera_name: str | None = None,
+            camera_id: int | None = None,
+            width: int = 256,
+            height: int = 256,
     ) -> None:
         """Load a saved model.
 
@@ -361,9 +372,9 @@ class Evaluator:  # pylint: disable=too-many-instance-attributes
         self.__load_model_and_env(save_dir, model_name, env_kwargs)
 
     def evaluate(
-        self,
-        num_episodes: int = 10,
-        cost_criteria: float = 1.0,
+            self,
+            num_episodes: int = 10,
+            cost_criteria: float = 1.0,
     ) -> tuple[list[float], list[float]]:
         """Evaluate the agent for num_episodes episodes.
 
@@ -428,8 +439,8 @@ class Evaluator:  # pylint: disable=too-many-instance-attributes
                 ep_ret += rew.item()
                 ep_cost += (cost_criteria ** length) * cost.item()
                 if (
-                    'EarlyTerminated' in self._cfgs['algo']
-                    and ep_cost >= self._cfgs.algo_cfgs.cost_limit
+                        'EarlyTerminated' in self._cfgs['algo']
+                        and ep_cost >= self._cfgs.algo_cfgs.cost_limit
                 ):
                     terminated = torch.as_tensor(True)
                 length += 1
@@ -463,7 +474,7 @@ class Evaluator:  # pylint: disable=too-many-instance-attributes
             "episode_lengths": episode_lengths,
             "episode_obs_masks": episode_obs_masks,
             "sensor_costs": self._env.costs,
-            "sensor_names" : self._env.obs_names,
+            "sensor_names": self._env.obs_names,
         }
 
         self._env.close()
@@ -478,7 +489,7 @@ class Evaluator:  # pylint: disable=too-many-instance-attributes
             AtrributeError: If the fps is not found.
         """
         assert (
-            self._env is not None
+                self._env is not None
         ), 'The environment must be provided or created before getting the fps.'
         try:
             fps = self._env.metadata['render_fps']
@@ -489,11 +500,11 @@ class Evaluator:  # pylint: disable=too-many-instance-attributes
         return fps
 
     def render(  # pylint: disable=too-many-locals,too-many-arguments,too-many-branches,too-many-statements
-        self,
-        num_episodes: int = 1,
-        save_replay_path: str | None = None,
-        max_render_steps: int = 2000,
-        cost_criteria: float = 1.0,
+            self,
+            num_episodes: int = 1,
+            save_replay_path: str | None = None,
+            max_render_steps: int = 2000,
+            cost_criteria: float = 1.0,
     ) -> None:  # pragma: no cover
         """Render the environment for one episode.
 
@@ -505,10 +516,10 @@ class Evaluator:  # pylint: disable=too-many-instance-attributes
             cost_criteria (float, optional): The discount factor for the cost. Defaults to 1.0.
         """
         assert (
-            self._env is not None
+                self._env is not None
         ), 'The environment must be provided or created before rendering.'
         assert (
-            self._actor is not None or self._planner is not None
+                self._actor is not None or self._planner is not None
         ), 'The policy or planner must be provided or created before rendering.'
         if save_replay_path is None:
             save_replay_path = os.path.join(self._save_dir, 'video', self._model_name.split('.')[0])
@@ -535,7 +546,7 @@ class Evaluator:  # pylint: disable=too-many-instance-attributes
             done = False
             ep_ret, ep_cost, length = 0.0, 0.0, 0.0
             while (
-                not done and step <= max_render_steps
+                    not done and step <= max_render_steps
             ):  # a big number to make sure the episode will end
                 if 'Saute' in self._cfgs['algo'] or 'Simmer' in self._cfgs['algo']:
                     obs = torch.cat([obs, self._safety_obs], dim=-1)
@@ -564,8 +575,8 @@ class Evaluator:  # pylint: disable=too-many-instance-attributes
                 ep_ret += rew.item()
                 ep_cost += (cost_criteria ** length) * cost.item()
                 if (
-                    'EarlyTerminated' in self._cfgs['algo']
-                    and ep_cost >= self._cfgs.algo_cfgs.cost_limit
+                        'EarlyTerminated' in self._cfgs['algo']
+                        and ep_cost >= self._cfgs.algo_cfgs.cost_limit
                 ):
                     terminated = torch.as_tensor(True)
                 length += 1

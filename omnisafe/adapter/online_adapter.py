@@ -29,6 +29,7 @@ from omnisafe.envs.wrapper import (
     RewardNormalize,
     TimeLimit,
     Unsqueeze,
+    ModalityObsNormalize,
 )
 from omnisafe.typing import OmnisafeSpace
 from omnisafe.utils.config import Config
@@ -73,6 +74,7 @@ class OnlineAdapter:
 
         self._wrapper(
             obs_normalize=cfgs.algo_cfgs.obs_normalize,
+            obs_modality_normalize=cfgs.algo_cfgs.obs_modality_normalize,
             reward_normalize=cfgs.algo_cfgs.reward_normalize,
             cost_normalize=cfgs.algo_cfgs.cost_normalize,
         )
@@ -84,6 +86,7 @@ class OnlineAdapter:
         obs_normalize: bool = True,
         reward_normalize: bool = True,
         cost_normalize: bool = True,
+        obs_modality_normalize: bool = True
     ) -> None:
         """Wrapper the environment.
 
@@ -135,6 +138,20 @@ class OnlineAdapter:
         if obs_normalize:
             self._env = ObsNormalize(self._env, device=self._device)
             self._eval_env = ObsNormalize(self._eval_env, device=self._device)
+        if obs_modality_normalize:
+            self._env = ModalityObsNormalize(
+                self._env,
+                device=self._device,
+                modality_to_span=self._env.mapping,  # dictionary of modality to span, i.e {'kinematics': (0,6), 'lidar': (6,20)}
+                mask_length=len(self._env.obs_names),  # list of modality names, i.e ['kinematics', 'lidar']
+            )
+
+            self._eval_env = ModalityObsNormalize(
+                self._eval_env,
+                device=self._device,
+                modality_to_span=self._env.mapping,
+                mask_length=len(self._env.obs_names),
+            )
         if reward_normalize:
             self._env = RewardNormalize(self._env, device=self._device)
         if cost_normalize:

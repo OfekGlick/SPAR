@@ -131,9 +131,11 @@ class AlgoWrapper:
             cfgs.recurisve_update({'exp_increment_cfgs': {'train_cfgs': self.train_terminal_cfgs}})
 
         # the exp_name format is PPO-{SafetyPointGoal1-v0}
-        use_cost = "use_cost" if cfgs['algo_cfgs']['use_cost'] else ""
-        use_all_obs = 'use_all_obs' if cfgs['env_cfgs']['use_all_obs'] else ""
-        exp_name = f'{self.algo}-{self.env_id.split("budget-aware-")[1]}-{use_cost}-{use_all_obs}'
+        use_cost = "-use_cost" if cfgs['algo_cfgs']['use_cost'] else ""
+        use_all_obs = '-use_all_obs' if cfgs['env_cfgs']['use_all_obs'] else ""
+        sd_reg_str = '-sd_reg' if cfgs['algo_cfgs']['sd_regulizer'] else ''
+        zero_act_str = '-zero_act' if cfgs['algo_cfgs']['no_zero_act'] else ''
+        exp_name = f'{self.algo}-{self.env_id.split("budget-aware-")[1]}{use_cost}{use_all_obs}{sd_reg_str}{zero_act_str}'
         cfgs.recurisve_update({'exp_name': exp_name, 'env_id': self.env_id, 'algo': self.algo})
         cfgs.train_cfgs.recurisve_update(
             {'epochs': cfgs.train_cfgs.total_steps // cfgs.algo_cfgs.steps_per_epoch},

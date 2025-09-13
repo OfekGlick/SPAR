@@ -77,13 +77,13 @@ class OnPolicyAdapter(OnlineAdapter):
         """
         self._reset_log()
 
-        obs, _ = self.reset()
+        obs, info = self.reset()
         for step in track(
             range(steps_per_epoch),
             description=f'Processing rollout for epoch: {logger.current_epoch}...',
         ):
             act, value_r, value_c, logp = agent.step(obs)
-            next_obs, reward, cost, terminated, truncated, info = self.step(act)
+            next_obs, reward, cost, terminated, truncated, next_info = self.step(act)
 
             self._log_value(reward=reward, cost=cost, info=info)
 
@@ -99,11 +99,12 @@ class OnPolicyAdapter(OnlineAdapter):
                 value_r=value_r,
                 value_c=value_c,
                 logp=logp,
-                # TODO: uncomment this when implementing the auxiliary loss.
-                original_observation=info.get('original_observation', obs),
+                # TODO: uncomment/comment this when implementing the auxiliary loss.
+                unmasked_observation=info['unmasked_observation'],
             )
 
             obs = next_obs
+            info = next_info
             epoch_end = step >= steps_per_epoch - 1
             for idx, (done, time_out) in enumerate(zip(terminated, truncated)):
                 if epoch_end or done or time_out:
@@ -117,7 +118,7 @@ class OnPolicyAdapter(OnlineAdapter):
                             _, last_value_r, last_value_c, _ = agent.step(obs[idx])
                         if time_out:
                             _, last_value_r, last_value_c, _ = agent.step(
-                                info['final_observation'][idx],
+                                obs[idx],
                             )
                         last_value_r = last_value_r.unsqueeze(0)
                         last_value_c = last_value_c.unsqueeze(0)
@@ -129,9 +130,14 @@ class OnPolicyAdapter(OnlineAdapter):
                         self._ep_ret[idx] = 0.0
                         self._ep_cost[idx] = 0.0
                         self._ep_len[idx] = 0.0
-                        for sensor_idx, is_active in enumerate(info['final_info']['sensor_mask']):
-                            sensor_name = f'sensor_{sensor_idx}'
-                            self._ep_sensor_activations[idx][sensor_name] = 0.0
+                        try:
+                            for sensor_idx, is_active in enumerate(info['final_info']['sensor_mask']):
+                                sensor_name = f'sensor_{sensor_idx}'
+                                self._ep_sensor_activations[idx][sensor_name] = 0.0
+                        except KeyError:
+                            for sensor_idx, is_active in enumerate(info['sensor_mask']):
+                                sensor_name = f'sensor_{sensor_idx}'
+                                self._ep_sensor_activations[idx][sensor_name] = 0.0
 
                     buffer.finish_path(last_value_r, last_value_c, idx)
 

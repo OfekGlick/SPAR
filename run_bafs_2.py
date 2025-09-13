@@ -1,11 +1,10 @@
 import omnisafe
 import argparse
 from pprint import pprint
-import budget_aware_highway
 import omnisafe.algorithms.on_policy.second_order.cpo
-from BAFS_1.args_utils import parse_arguments
-import os
+from args_utils import parse_arguments
 import torch
+import budget_aware_highway
 
 custom_cfgs = {
     'train_cfgs': {
@@ -22,6 +21,7 @@ custom_cfgs = {
         'zero_barrier_eps': 1.0e-8,  # numerical clamp inside log
         'zero_barrier_coef': 0.1,     # strength of the regularizer
         'kl_early_stop': True,
+        # 'obs_modality_normalize': True,
     },
     'model_cfgs': {
         'actor_type': 'multihead'
@@ -76,6 +76,8 @@ def adjust_config(custom_cfgs, args):
     custom_cfgs['env_cfgs']['max_episode_steps'] = args.max_episode_steps
     custom_cfgs['env_cfgs']['use_all_obs'] = args.use_all_obs
     custom_cfgs['env_cfgs']['seed'] = args.seed
+    custom_cfgs['algo_cfgs']['sd_regulizer'] = args.sd_regulizer
+    custom_cfgs['algo_cfgs']['no_zero_act'] = args.no_zero_act
     # try:
     #     custom_cfgs['env_cfgs']['feature_costs'] = [float(val) for val in args.feature_cost]
     # except:
@@ -102,11 +104,12 @@ def train_agent(eval_num_episodes=50):
 if __name__ == '__main__':
     args, unparsed_args = parse_arguments()
     adjust_config(custom_cfgs, args)
-    # custom_cfgs['env_cfgs']['max_episode_steps'] = 2
+    # custom_cfgs['env_cfgs']['max_episode_steps'] = 20
     # custom_cfgs['env_cfgs']['render_mode'] = 'rgb_array'
-    # custom_cfgs['train_cfgs']['total_steps'] = 10
-    # custom_cfgs['algo_cfgs']['steps_per_epoch'] = 2
-    # custom_cfgs['env_cfgs']['use_all_obs'] = False
+    # custom_cfgs['train_cfgs']['total_steps'] = 100
+    # custom_cfgs['algo_cfgs']['steps_per_epoch'] = 20
+    # custom_cfgs['algo_cfgs']['sd_regulizer'] = True
+    # custom_cfgs['env_cfgs']['use_all_obs'] = True
     # args.eval_num_episodes = 5
     assert custom_cfgs['env_cfgs']['max_episode_steps'] <= custom_cfgs['algo_cfgs'][
         'steps_per_epoch'], 'Max episode steps should be less than or equal to steps per epoch - otherwise you wont get any episodic data'
