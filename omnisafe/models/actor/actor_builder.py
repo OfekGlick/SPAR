@@ -19,10 +19,12 @@ from omnisafe.models.actor.gaussian_sac_actor import GaussianSACActor
 from omnisafe.models.actor.mlp_actor import MLPActor
 from omnisafe.models.actor.perturbation_actor import PerturbationActor
 from omnisafe.models.actor.vae_actor import VAE
+from omnisafe.models.actor.categorical_learning_actor import CategoricalLearningActor
 from omnisafe.models.base import Actor
 from omnisafe.typing import Activation, ActorType, InitFunction, OmnisafeSpace
 from omnisafe.models.actor.multiheadactor import MultiHeadActor
-
+from omnisafe.models.actor.multihead_discrete_actor import MultiHeadDiscreteActor
+from gymnasium import spaces
 
 # pylint: disable-next=too-few-public-methods
 class ActorBuilder:
@@ -44,8 +46,8 @@ class ActorBuilder:
             hidden_sizes: list[int],
             activation: Activation = 'relu',
             weight_initialization_mode: InitFunction = 'kaiming_uniform',
-            cont_act_space=None,
-            disc_act_space=None,
+            env_act_space=None,
+            mask_act_space=None,
     ) -> None:
         """Initialize an instance of :class:`ActorBuilder`."""
         self._obs_space: OmnisafeSpace = obs_space
@@ -53,11 +55,8 @@ class ActorBuilder:
         self._weight_initialization_mode: InitFunction = weight_initialization_mode
         self._activation: Activation = activation
         self._hidden_sizes: list[int] = hidden_sizes
-        try:
-            self._cont_act_space = cont_act_space
-            self._disc_act_space = disc_act_space
-        except Exception as e:
-            print("Couldn't assign cont_act_space and disc_act_space: ", e)
+        self.env_act_space = env_act_space
+        self.mask_act_space = mask_act_space
 
     # pylint: disable-next=too-many-return-statements
     def build_actor(
@@ -120,17 +119,47 @@ class ActorBuilder:
                 activation=self._activation,
                 weight_initialization_mode=self._weight_initialization_mode,
             )
-        if actor_type == 'multihead':
-            return MultiHeadActor(
-                obs_space=self._obs_space,
-                cont_act_space=self._cont_act_space,
-                disc_act_space=self._disc_act_space,
-                hidden_sizes=self._hidden_sizes,
+        if actor_type == 'categorical_learning':
+            return CategoricalLearningActor(
+                self._obs_space,
+                self._act_space,
+                self._hidden_sizes,
                 activation=self._activation,
-                shared_hidden_sizes=[256, 256],
                 weight_initialization_mode=self._weight_initialization_mode,
             )
+        if actor_type == 'multihead':
+            # Dynamically determine if we need continuous or discrete multihead actor
+            # Check if action space is a Tuple
+            if not isinstance(self._act_space, spaces.Tuple):
+                raise ValueError(
+                    f"Multihead actor requires Tuple action space, got {type(self._act_space)}"
+                )
+
+            # Check if first element of Tuple is Box (continuous) or Discrete
+            if isinstance(self._act_space[0], spaces.Box):
+                # Continuous environment action + sensor mask
+                return MultiHeadActor(
+                    obs_space=self._obs_space,
+                    cont_act_space=self._act_space[0],
+                    disc_act_space=self._act_space[1],
+                    hidden_sizes=self._hidden_sizes,
+                    activation=self._activation,
+                    shared_hidden_sizes=[256, 256],
+                    weight_initialization_mode=self._weight_initialization_mode,
+                )
+            else:
+                # Discrete environment action + sensor mask
+                return MultiHeadDiscreteActor(
+                    obs_space=self._obs_space,
+                    disc_env_act_space=self._act_space[0],
+                    disc_mask_space=self._act_space[1],
+                    hidden_sizes=self._hidden_sizes,
+                    activation=self._activation,
+                    shared_hidden_sizes=[256, 256],
+                    weight_initialization_mode=self._weight_initialization_mode,
+                )
         raise NotImplementedError(
             f'Actor type {actor_type} is not implemented! '
-            f'Available actor types are: gaussian_learning, gaussian_sac, mlp, vae, perturbation.',
+            f'Available actor types are: gaussian_learning, gaussian_sac, mlp, vae, perturbation, '
+            f'categorical_learning, multihead.',
         )

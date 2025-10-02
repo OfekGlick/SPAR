@@ -36,7 +36,7 @@ class BudgetAwareHighway(gym.Wrapper, CMDP):
         "budget-aware-intersection-v0",
         "budget-aware-intersection-v1",
     ]
-    need_auto_reset_wrapper = False
+    need_auto_reset_wrapper = True
     need_time_limit_wrapper = True
 
     DEFAULT_TYPES = [
@@ -59,7 +59,7 @@ class BudgetAwareHighway(gym.Wrapper, CMDP):
             seed=42,
             *,
             use_all_obs: bool = False,
-            sensor_dropout_rescale: bool = True,
+            # sensor_dropout_rescale: bool = True,
             modality_costs: Dict[str, float] = None,
             cast_dtype: np.dtype = np.float32,
             max_episode_steps: int = None,
@@ -96,7 +96,7 @@ class BudgetAwareHighway(gym.Wrapper, CMDP):
 
         # ── user-config ────────────────────────────────────────────────────────────
         self.use_all_obs = bool(use_all_obs)
-        self.sensor_dropout_rescale = bool(sensor_dropout_rescale)
+        # self.sensor_dropout_rescale = bool(sensor_dropout_rescale)
         self.cast_dtype = cast_dtype
         self._num_envs = kwargs.pop('num_envs')
         # ── build multi‑observation (concat) ──────────────────────────────────────
@@ -156,14 +156,23 @@ class BudgetAwareHighway(gym.Wrapper, CMDP):
 
         # ── Action space ───────────────────────────────────────────────────────────
         self.original_action_space = self.env.action_space
+        self.is_continuous = isinstance(self.env.action_space, gym.spaces.Box)
+
         if self.use_all_obs:
             new_action_space = self.env.action_space
         else:
-            cont_action_space = self.env.action_space
-            disc_action_space = gym.spaces.MultiBinary(self._num_modalities)
-            self.cont_act_space = cont_action_space
-            self.disc_act_space = disc_action_space
-            new_action_space = gym.spaces.Tuple((cont_action_space, disc_action_space))
+            env_action_space = self.env.action_space  # Can be Box or Discrete
+            sensor_mask_space = gym.spaces.MultiBinary(self._num_modalities)
+
+            # Store references for actor building
+            if self.is_continuous:
+                self.cont_act_space = env_action_space
+                self.disc_act_space = sensor_mask_space
+            else:
+                self.disc_act_space = env_action_space
+                self.disc_mask_space = sensor_mask_space
+
+            new_action_space = gym.spaces.Tuple((env_action_space, sensor_mask_space))
         self.action_space = new_action_space
         self._action_space = new_action_space
 
@@ -217,17 +226,9 @@ class BudgetAwareHighway(gym.Wrapper, CMDP):
         return m_feat
 
     def _apply_mask(self, flat: np.ndarray, feat_mask01: np.ndarray) -> np.ndarray:
-        """Gating + optional Sensor Dropout α-rescale."""
+        """Gating"""
         feat_mask01 = feat_mask01.astype(flat.dtype, copy=False)
-        if self.sensor_dropout_rescale:
-            kept = int(feat_mask01.sum())
-            try:
-                alpha = float(self._flat_dim) / float(kept)
-            except ZeroDivisionError:
-                alpha = 1.0
-            gated = flat * feat_mask01 * alpha
-        else:
-            gated = flat * feat_mask01
+        gated = flat * feat_mask01
         return gated
 
     def _mask_cost(self, m_mod01: np.ndarray) -> float:
@@ -240,7 +241,6 @@ class BudgetAwareHighway(gym.Wrapper, CMDP):
     def reset(self, **kwargs):
         obs, info = self.env.reset(**kwargs)
         flat = self._concat_raw_obs()
-        out = flat
         mask0 = np.ones(self._num_modalities, dtype=flat.dtype)
         out = np.concatenate([flat, mask0], axis=0).astype(self.observation_space.dtype, copy=False)
         out = torch.as_tensor(out, dtype=torch.float32).to(self._device)
@@ -252,6 +252,9 @@ class BudgetAwareHighway(gym.Wrapper, CMDP):
         if self.use_all_obs:
             inner = self._to_numpy(action)
             base_obs, r, term, trunc, info = self.env.step(inner)
+            # print(f"[DEBUG] use_all_obs path - reward: {r}, term: {term}, trunc: {trunc}")
+            # if term or trunc:
+            #     print(f"[DEBUG] EPISODE ENDED! Info: {info}")
             flat = self._concat_raw_obs()
             out = flat
             m_mod01 = np.ones(self._num_modalities, dtype=flat.dtype)
@@ -265,7 +268,6 @@ class BudgetAwareHighway(gym.Wrapper, CMDP):
             info['original_cost'] = torch.as_tensor(cost, dtype=torch.float32)
             returned_obs = torch.as_tensor(out, dtype=torch.float32).to(self._device)
             info['unmasked_observation'] = returned_obs.clone()  # <--- Save original obs
-
             return (
                 returned_obs,
                 torch.as_tensor(rew, dtype=torch.float32).to(self._device),
@@ -279,12 +281,15 @@ class BudgetAwareHighway(gym.Wrapper, CMDP):
         if not (isinstance(action, (tuple, list)) and len(action) == 2):
             raise ValueError("Action must be Tuple((env_action, modality_binary_mask)) when use_all_obs=False")
 
-        cont_action = self._to_numpy(action[0])
+        env_action = self._to_numpy(action[0])
         mod_mask = self._to_numpy(action[1]).astype(np.int64).reshape(-1)
+        # print(f"[DEBUG] env_action: {env_action}, mod_mask: {mod_mask}")
 
         # Step base env
-        base_obs, r, term, trunc, info = self.env.step(cont_action)
-
+        base_obs, r, term, trunc, info = self.env.step(env_action)
+        # print(f"[DEBUG] After step - reward: {r}, term: {term}, trunc: {trunc}")
+        # if term or trunc:
+        #     print(f"[DEBUG] EPISODE ENDED! Info: {info}")
         # Build next obs and apply gating
         flat = self._concat_raw_obs()
         feat_mask01 = self._expand_modality_mask_to_features(mod_mask.astype(np.float32))
@@ -307,7 +312,6 @@ class BudgetAwareHighway(gym.Wrapper, CMDP):
         original_obs_flat = np.concatenate([flat, np.ones(self._num_modalities, dtype=flat.dtype)],)
         returned_obs = torch.as_tensor(original_obs_flat, dtype=torch.float32).to(self._device)
         info["unmasked_observation"] = returned_obs.clone()  # <--- Save original flat obs
-
         return (
             torch.as_tensor(out, dtype=torch.float32).to(self._device),
             torch.as_tensor(float(r), dtype=torch.float32).to(self._device),
@@ -321,20 +325,17 @@ class BudgetAwareHighway(gym.Wrapper, CMDP):
         """
         Create a random action for the BudgetAwareHighway environment.
 
-        Args:
-            env: The BudgetAwareHighway environment instance
-            use_all_obs: Override for use_all_obs flag. If None, uses env.use_all_obs
-
         Returns:
-            - If use_all_obs=True: Just the environment action
+            - If use_all_obs=True: Just the environment action (continuous or discrete)
             - If use_all_obs=False: Tuple of (env_action, modality_mask)
         """
 
-        # Sample random continuous action from the original environment action space
-        continuous_action = self.original_action_space.sample()
+        # Sample random action from the original environment action space
+        env_action = self.original_action_space.sample()
 
         if self.use_all_obs:
-            return torch.as_tensor(continuous_action, dtype=torch.float32).to(self._device)
+            dtype = torch.float32 if self.is_continuous else torch.int64
+            return torch.as_tensor(env_action, dtype=dtype).to(self._device)
         else:
             # Sample random binary mask for modalities (at least one modality must be active)
             num_modalities = self._num_modalities
@@ -345,8 +346,10 @@ class BudgetAwareHighway(gym.Wrapper, CMDP):
                 # Randomly activate one modality
                 active_idx = np.random.randint(0, num_modalities)
                 modality_mask[active_idx] = 1
+
+            dtype = torch.float32 if self.is_continuous else torch.int64
             return (
-                torch.as_tensor(continuous_action, dtype=torch.float32).to(self._device),
+                torch.as_tensor(env_action, dtype=dtype).to(self._device),
                 torch.as_tensor(modality_mask, dtype=torch.float32).to(self._device),
             )
 

@@ -9,14 +9,14 @@ class MultiHeadActor(Actor):
     """MultiHeadActor with shared layers for continuous and discrete actions."""
 
     def __init__(
-        self,
-        obs_space,
-        cont_act_space,
-        disc_act_space,
-        hidden_sizes,
-        shared_hidden_sizes,
-        activation='relu',
-        weight_initialization_mode='kaiming_uniform',
+            self,
+            obs_space,
+            cont_act_space,
+            disc_act_space,
+            hidden_sizes,
+            shared_hidden_sizes,
+            activation='relu',
+            weight_initialization_mode='kaiming_uniform',
     ):
         """Initialize the MultiHeadActor with shared layers."""
         super().__init__(obs_space, cont_act_space, hidden_sizes, activation, weight_initialization_mode)
@@ -34,16 +34,18 @@ class MultiHeadActor(Actor):
             sizes=[shared_hidden_sizes[-1], *hidden_sizes, cont_act_space.shape[0]],
             activation=activation,
             weight_initialization_mode=weight_initialization_mode,
+            output_activation='tanh',
             norm=True,
 
         )
-        self.log_std = nn.Parameter(torch.zeros(cont_act_space.shape[0]))
+        self.log_std = nn.Parameter(torch.zeros(cont_act_space.shape[0]), requires_grad=True)
 
         # Discrete action head
         self.discrete_net = build_mlp_network(
             sizes=[shared_hidden_sizes[-1], *hidden_sizes, disc_act_space.shape[0]],
             activation=activation,
             weight_initialization_mode=weight_initialization_mode,
+            output_activation='identity',
             norm=True,
         )
 
@@ -73,7 +75,7 @@ class MultiHeadActor(Actor):
         self._after_inference = True
         return self._current_cont_dist, self._current_disc_dist
 
-    def predict(self, obs, deterministic=False):
+    def predict(self, obs, deterministic=True):
         """Predict both continuous and discrete actions and cache the distributions."""
         self._current_cont_dist, self._current_disc_dist = self._distribution(obs)
 
@@ -111,12 +113,10 @@ class MultiHeadActor(Actor):
 
         return cont_log_prob + disc_log_prob
 
-
     @property
     def std(self) -> float:
         """Get the standard deviation of the normal distribution."""
         return torch.exp(self.log_std).detach().cpu().numpy()
-
 
     @std.setter
     def std(self, std: float) -> None:

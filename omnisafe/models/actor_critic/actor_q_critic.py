@@ -67,6 +67,7 @@ class ActorQCritic(nn.Module):
         epochs: int,
         cont_act_space=None,
         disc_act_space=None,
+        disc_mask_space=None,
     ) -> None:
         """Initialize an instance of :class:`ActorQCritic`."""
         super().__init__()
@@ -79,6 +80,7 @@ class ActorQCritic(nn.Module):
             weight_initialization_mode=model_cfgs.weight_initialization_mode,
             cont_act_space=cont_act_space,
             disc_act_space=disc_act_space,
+            disc_mask_space=disc_mask_space,
         ).build_actor(
             actor_type=model_cfgs.actor_type,
         )

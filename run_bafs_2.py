@@ -4,6 +4,9 @@ from pprint import pprint
 import omnisafe.algorithms.on_policy.second_order.cpo
 from args_utils import parse_arguments
 import torch
+import gymnasium as gym
+from gymnasium import spaces
+from omnisafe.envs.core import make as omnisafe_make
 import budget_aware_highway
 
 custom_cfgs = {
@@ -19,22 +22,23 @@ custom_cfgs = {
         'batch_size': 512,
         'gamma': 0.9,
         'zero_barrier_eps': 1.0e-8,  # numerical clamp inside log
-        'zero_barrier_coef': 0.1,     # strength of the regularizer
-        'kl_early_stop': True,
+        'zero_barrier_coef': 0.1,  # strength of the regularizer
+        'kl_early_stop': False,
+        'target_kl': 0.5,
         # 'obs_modality_normalize': True,
     },
     'model_cfgs': {
-        'actor_type': 'multihead'
+        'actor_type': 'auto'  # Auto-detect based on action space
     },
     'logger_cfgs': {
-        'wandb_project': 'BAFS 2.2',
+        'wandb_project': 'BAFS 2.0',
         'use_wandb': True,
     },
     'env_cfgs': {
         'use_all_obs': False,
         'max_episode_steps': 250,
         "action": {
-            "type": "ContinuousAction"
+            "type": "DiscreteMetaAction"
         },
         'render_mode': 'rgb_array',
         'config': {
@@ -42,10 +46,13 @@ custom_cfgs = {
                 "type": "Kinematics",
                 "absolute": False,
                 "features": ["x", "y", "vx", "vy", "heading", "lane_id"],
-                "vehicles_count": 15,
+                "vehicles_count": 50,
             },
-            "policy_frequency": 1,
+            "policy_frequency": 5,
             "simulation_frequency": 15,
+            "initial_spacing": 3,  # Increase spacing
+            # "lanes_count": 10,
+            # "steering_range": [-0.14, 0.14],
         },
     },
 }
@@ -74,6 +81,7 @@ def adjust_config(custom_cfgs, args):
     custom_cfgs['train_cfgs']['total_steps'] = args.total_steps
     custom_cfgs['algo_cfgs']['use_cost'] = args.use_cost
     custom_cfgs['env_cfgs']['max_episode_steps'] = args.max_episode_steps
+    custom_cfgs['algo_cfgs']['steps_per_epoch'] = args.steps_per_epoch
     custom_cfgs['env_cfgs']['use_all_obs'] = args.use_all_obs
     custom_cfgs['env_cfgs']['seed'] = args.seed
     custom_cfgs['algo_cfgs']['sd_regulizer'] = args.sd_regulizer
@@ -86,6 +94,60 @@ def adjust_config(custom_cfgs, args):
     #                                               args.features_to_use] if args.features_to_use else None
 
 
+def detect_actor_type(env_id, env_cfgs):
+    """
+    Auto-detect the appropriate actor type based on the environment's action space.
+
+    Args:
+        env_id (str): Environment ID
+        env_cfgs (dict): Environment configuration
+
+    Returns:
+        str: Appropriate actor type ('gaussian_learning', 'categorical_learning', or 'multihead')
+    """
+
+
+    # Create a temporary environment to inspect action space
+    try:
+        # Try creating with OmniSafe's make() for custom registered environments
+        temp_env = omnisafe_make(env_id, num_envs=1, **env_cfgs)
+    except:
+        # Fallback for standard gymnasium environments
+        try:
+            temp_env = gym.make(env_id, **env_cfgs)
+        except:
+            temp_env = gym.make(env_id)
+
+    action_space = temp_env.action_space
+    temp_env.close()
+
+    # Determine actor type based on action space
+    if isinstance(action_space, spaces.Tuple):
+        # Multi-head actor: check first element (env action)
+        env_action_space = action_space[0]
+        if isinstance(env_action_space, spaces.Box):
+            print(f"Detected Tuple[Box, MultiBinary] action space → using 'multihead' (continuous)")
+            return 'multihead'
+        elif isinstance(env_action_space, spaces.Discrete):
+            print(f"Detected Tuple[Discrete, MultiBinary] action space → using 'multihead' (discrete)")
+            return 'multihead'
+        else:
+            raise ValueError(f"Unsupported action space in Tuple: {type(env_action_space)}")
+
+    elif isinstance(action_space, spaces.Box):
+        # Continuous action space
+        print(f"Detected Box action space → using 'gaussian_learning'")
+        return 'gaussian_learning'
+
+    elif isinstance(action_space, spaces.Discrete):
+        # Discrete action space
+        print(f"Detected Discrete action space → using 'categorical_learning'")
+        return 'categorical_learning'
+
+    else:
+        raise ValueError(f"Unsupported action space type: {type(action_space)}")
+
+
 def train_agent(eval_num_episodes=50):
     """
     Train a safe agent.
@@ -94,6 +156,11 @@ def train_agent(eval_num_episodes=50):
     Returns:
         None
     """
+    # Auto-detect actor type if not explicitly set or if set to 'auto'
+    if 'actor_type' not in custom_cfgs.get('model_cfgs', {}) or custom_cfgs['model_cfgs']['actor_type'] == 'auto':
+        detected_actor_type = detect_actor_type(args.env_id, custom_cfgs.get('env_cfgs', {}))
+        custom_cfgs.setdefault('model_cfgs', {})['actor_type'] = detected_actor_type
+
     agent = omnisafe.Agent(args.algo, args.env_id, custom_cfgs=custom_cfgs)
     # if args.use_all_obs:
     #     agent.sample_random_actions(num_episodes=1_000, max_episode_length=500)
@@ -104,14 +171,14 @@ def train_agent(eval_num_episodes=50):
 if __name__ == '__main__':
     args, unparsed_args = parse_arguments()
     adjust_config(custom_cfgs, args)
-    # custom_cfgs['env_cfgs']['max_episode_steps'] = 20
+    # custom_cfgs['env_cfgs']['max_episode_steps'] = 200
     # custom_cfgs['env_cfgs']['render_mode'] = 'rgb_array'
-    # custom_cfgs['train_cfgs']['total_steps'] = 100
-    # custom_cfgs['algo_cfgs']['steps_per_epoch'] = 20
+    # custom_cfgs['train_cfgs']['total_steps'] = 5000
+    # custom_cfgs['algo_cfgs']['steps_per_epoch'] = 200
     # custom_cfgs['algo_cfgs']['sd_regulizer'] = True
     # custom_cfgs['env_cfgs']['use_all_obs'] = True
     # args.eval_num_episodes = 5
-    assert custom_cfgs['env_cfgs']['max_episode_steps'] <= custom_cfgs['algo_cfgs'][
-        'steps_per_epoch'], 'Max episode steps should be less than or equal to steps per epoch - otherwise you wont get any episodic data'
+    assert custom_cfgs['env_cfgs']['max_episode_steps'] <= custom_cfgs['algo_cfgs']['steps_per_epoch'], \
+        'Max episode steps should be less than or equal to steps per epoch - otherwise you wont get any episodic data'
     pprint(custom_cfgs)
     train_agent(eval_num_episodes=args.eval_num_episodes)

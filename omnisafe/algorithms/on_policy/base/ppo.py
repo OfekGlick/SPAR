@@ -48,11 +48,8 @@ class PPO(PolicyGradient):
         Returns:
             The loss of pi/actor.
         """
-        # TODO: check why the current obs and the original obs are the same
-        print(f"Action: {act}")
         distribution = self._actor_critic.actor(obs)
         logp_ = self._actor_critic.actor.log_prob(act)
-        std = self._actor_critic.actor.std
         ratio = torch.exp(logp_ - logp)
         ratio_cliped = torch.clamp(
             ratio,
@@ -65,7 +62,7 @@ class PPO(PolicyGradient):
         else:
             entropy = distribution.entropy().mean()
         loss -= self._cfgs.algo_cfgs.entropy_coef * entropy
-        # TODO: follow behaviour and make sure this doesn't break anything
+        # TODO: track behaviour and make sure this doesn't break anything
         # >>> NEW: zero-barrier regularizer (disc head: Bernoulli over sensors)
         if isinstance(distribution, tuple) and hasattr(distribution[1], 'probs'):
             if self._cfgs.algo_cfgs.no_zero_act:
@@ -73,48 +70,88 @@ class PPO(PolicyGradient):
                 zero_prob = (1.0 - p).prod(dim=-1)  # P(all zeros)
                 p_atleast_one = (1.0 - zero_prob).clamp_min(self._cfgs.algo_cfgs.zero_barrier_eps)
                 zero_barrier = -torch.log(p_atleast_one)  # >= 0; →0 when P(at least one)=1
-                loss = loss + self._cfgs.algo_cfgs.zero_barrier_coef * zero_barrier.mean()
+                loss = loss - self._cfgs.algo_cfgs.zero_barrier_coef * zero_barrier.mean()
                 # log a couple of diagnostics
                 self._logger.store({'Train/ZeroProbMean': zero_prob.mean().item()})
                 self._logger.store({'Reg/ZeroBarrier': zero_barrier.mean().item()})
             if self._cfgs.algo_cfgs.sd_regulizer and unmasked_observation is not None:
-                # --- PPO substitute of Liu'17 auxiliary loss ---
+                # --- Sensor Dropout (SD) regularizer: student-teacher distillation ---
                 # Student: use the already-computed distribution on the *masked* obs (rollout view)
-                mu_student = distribution[0].mean  # [B, n_cont]
+                dist_student = distribution[0]
 
                 # Teacher: run the same actor on the *unmasked* obs (full sensors, mask bits = 1s).
                 # By default we DETACH teacher so grads only shape the student head.
                 dist_teacher = self._actor_critic.actor(unmasked_observation)
-                mu_teacher = dist_teacher[0].mean.detach()
+                dist_teacher_env = dist_teacher[0]
 
-                # MSE between student and teacher continuous-action means
-                aux_mse = (mu_student - mu_teacher).pow(2).mean()
+                # Compute distillation loss based on distribution type
+                from torch.distributions import Normal, Categorical
+
+                if isinstance(dist_student, Normal):
+                    # Continuous actions: MSE between means
+                    mu_student = dist_student.mean  # [B, n_cont]
+                    mu_teacher = dist_teacher_env.mean.detach()
+                    aux_loss = (mu_student - mu_teacher).pow(2).mean()
+
+                elif isinstance(dist_student, Categorical):
+                    # Discrete actions: KL divergence KL(teacher || student)
+                    # This encourages student to match teacher's action distribution
+                    teacher_probs = dist_teacher_env.probs.detach()  # [B, n_actions]
+                    student_logprobs = dist_student.logits - dist_student.logits.logsumexp(dim=-1, keepdim=True)
+
+                    # KL(P||Q) = sum(P * log(P/Q)) = sum(P * (log(P) - log(Q)))
+                    aux_loss = -(teacher_probs * student_logprobs).sum(dim=-1).mean()
+
+                else:
+                    raise NotImplementedError(
+                        f"SD regularizer not implemented for distribution type: {type(dist_student)}"
+                    )
 
                 # Scale and add to PPO objective
                 aux_coef = self._cfgs.algo_cfgs.sd_regulizer_coeff
-                loss = loss + aux_coef * aux_mse
+                loss = loss - aux_coef * aux_loss
 
                 # (optional) logging
-                self._logger.store({'Loss/Aux': aux_mse.item()})
+                self._logger.store({'Loss/Aux': aux_loss.item()})
         entropy = entropy.item()
-        try:
-            self._logger.store(
-                {
-                    'Train/Entropy': entropy,
-                    'Train/ContinuousEntropy': distribution[0].entropy().mean().item(),
-                    'Train/DiscreteEntropy': distribution[1].entropy().mean().item(),
-                    'Train/PolicyRatio': ratio,
-                    'Train/PolicyStd': std,
-                    'Loss/Loss_pi': loss.mean().item(),
-                },
-            )
-        except TypeError:
-            self._logger.store(
-                {
-                    'Train/Entropy': entropy,
-                    'Train/PolicyRatio': ratio,
-                    'Train/PolicyStd': std,
-                    'Loss/Loss_pi': loss.mean().item(),
-                },
-            )
+        if isinstance(distribution, tuple):
+            try:
+                self._logger.store(
+                    {
+                        'Train/Entropy': entropy,
+                        'Train/ContinuousEntropy': distribution[0].entropy().mean().item(),
+                        'Train/MaskEntropy': distribution[1].entropy().mean().item(),
+                        'Train/PolicyRatio': ratio,
+                        'Train/PolicyStd': self._actor_critic.actor.std,
+                        'Loss/Loss_pi': loss.mean().item(),
+                    },
+                )
+            except:
+                self._logger.store(
+                    {
+                        'Train/Entropy': entropy,
+                        'Train/DiscreteEntropy': distribution[0].entropy().mean().item(),
+                        'Train/MaskEntropy': distribution[1].entropy().mean().item(),
+                        'Train/PolicyRatio': ratio,
+                        'Loss/Loss_pi': loss.mean().item(),
+                    },
+                )
+        else:
+            try:
+                self._logger.store(
+                    {
+                        'Train/Entropy': entropy,
+                        'Train/PolicyRatio': ratio,
+                        'Train/PolicyStd': self._actor_critic.actor.std,
+                        'Loss/Loss_pi': loss.mean().item(),
+                    },
+                )
+            except:
+                self._logger.store(
+                    {
+                        'Train/Entropy': entropy,
+                        'Train/PolicyRatio': ratio,
+                        'Loss/Loss_pi': loss.mean().item(),
+                    },
+                )
         return loss

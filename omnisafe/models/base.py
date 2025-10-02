@@ -70,6 +70,8 @@ class Actor(nn.Module, ABC):
 
         if isinstance(self._act_space, spaces.Box) and len(self._act_space.shape) == 1:
             self._act_dim: int = self._act_space.shape[0]
+        elif isinstance(self._act_space, spaces.Discrete):
+            self._act_dim: int = self._act_space.n.item()
         else:
             print("I've implemented this part of the code")
 
@@ -207,5 +209,10 @@ class Critic(nn.Module, ABC):
 
         if isinstance(self._act_space, spaces.Box) and len(self._act_space.shape) == 1:
             self._act_dim = self._act_space.shape[0]
+        if isinstance(self._act_space, spaces.Discrete):
+            self._act_dim = self._act_space.n.item()
         else:
-            self._act_dim = self._act_space[0].shape[0] + self._act_space[1].shape[0]
+            if isinstance(self._act_space[0], spaces.Box):
+                self._act_dim = self._act_space[0].shape[0] + self._act_space[1].shape[0]
+            else:
+                self._act_dim = self._act_space[0].n.item() + self._act_space[1].shape[0]

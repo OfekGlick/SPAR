@@ -93,14 +93,13 @@ class PolicyGradient(BaseAlgo):
             self._actor_critic: ConstraintActorCritic = ConstraintActorCritic(
                 obs_space=self._env.observation_space,
                 act_space=self._env.action_space,
-                cont_act_space=self._env.action_space[0],
-                disc_act_space=self._env.action_space[1],
+                env_act_space=self._env.action_space[0],
+                mask_act_space=self._env.action_space[1],
                 model_cfgs=self._cfgs.model_cfgs,
                 epochs=self._cfgs.train_cfgs.epochs,
             ).to(self._device)
-            print("Using MultiHeadActor")
+            print("Using MultiHeadActor or MultiHeadDiscreteActor")
         except:
-            self._cfgs.model_cfgs.actor_type = 'gaussian_learning'
             self._actor_critic: ConstraintActorCritic = ConstraintActorCritic(
                 obs_space=self._env.observation_space,
                 act_space=self._env.action_space,
@@ -108,6 +107,10 @@ class PolicyGradient(BaseAlgo):
                 epochs=self._cfgs.train_cfgs.epochs,
             ).to(self._device)
             print("Not using MultiHeadActor")
+
+        init_std = getattr(self._cfgs.model_cfgs, "init_cont_std", 0.01)
+        if hasattr(self._actor_critic, "actor") and hasattr(self._actor_critic.actor, "std"):
+            self._actor_critic.actor.std = float(init_std)
 
         if distributed.world_size() > 1:
             distributed.sync_params(self._actor_critic)
@@ -223,15 +226,22 @@ class PolicyGradient(BaseAlgo):
         self._logger.register_key('Train/Epoch')
         self._logger.register_key('Train/Entropy')
         if self._cfgs.model_cfgs.actor_type == 'multihead':
-            self._logger.register_key('Train/ContinuousEntropy')
-            self._logger.register_key('Train/DiscreteEntropy')
+            if isinstance(self._env.action_space[0], gymnasium.spaces.Box):
+                self._logger.register_key('Train/ContinuousEntropy')
+            else:
+                self._logger.register_key('Train/DiscreteEntropy')
+            self._logger.register_key('Train/MaskEntropy')
 
         self._logger.register_key('Train/KL')
         self._logger.register_key('Train/StopIter')
         self._logger.register_key('Train/PolicyRatio', min_and_max=True)
         self._logger.register_key('Train/LR')
-        if self._cfgs.model_cfgs.actor_type == 'gaussian_learning' or self._cfgs.model_cfgs.actor_type == 'multihead':
-            self._logger.register_key('Train/PolicyStd')
+        if self._cfgs.model_cfgs.actor_type == 'gaussian_learning':
+            if isinstance(self._env.action_space, gymnasium.spaces.Box):
+                self._logger.register_key('Train/PolicyStd')
+        elif self._cfgs.model_cfgs.actor_type == 'multihead':
+            if isinstance(self._env.action_space[0], gymnasium.spaces.Box):
+                self._logger.register_key('Train/PolicyStd')
 
         self._logger.register_key('TotalEnvSteps')
 
@@ -284,6 +294,7 @@ class PolicyGradient(BaseAlgo):
                 agent=self._actor_critic,
                 buffer=self._buf,
                 logger=self._logger,
+                rollout_idx=float(epoch) / float(self._cfgs.train_cfgs.epochs),
             )
             self._logger.store({'Time/Rollout': time.time() - rollout_time})
 
@@ -409,10 +420,10 @@ class PolicyGradient(BaseAlgo):
             if isinstance(new_distribution, tuple):
                 kl = (
                         torch.distributions.kl.kl_divergence(old_distribution[0], new_distribution[0])
-                        .sum(-1, keepdim=True)
+                        .mean(-1, keepdim=True)
                         .mean() +
                         torch.distributions.kl.kl_divergence(old_distribution[1], new_distribution[1])
-                        .sum(-1, keepdim=True)
+                        .mean(-1, keepdim=True)
                         .mean()
                 )
             else:

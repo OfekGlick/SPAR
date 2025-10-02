@@ -38,7 +38,7 @@ class Normalizer(nn.Module):
     _count: torch.Tensor  # number of samples
     _clip: torch.Tensor  # clip value
 
-    def __init__(self, shape: tuple[int, ...], clip: float = 1e6) -> None:
+    def __init__(self, shape: tuple[int, ...], clip: float = 1e6, masked=False) -> None:
         """Initialize an instance of :class:`Normalizer`."""
         super().__init__()
         if shape == ():
@@ -58,6 +58,7 @@ class Normalizer(nn.Module):
 
         self._shape: tuple[int, ...] = shape
         self._first: bool = True
+        self.masked = masked
 
     @property
     def shape(self) -> tuple[int, ...]:
@@ -102,7 +103,8 @@ class Normalizer(nn.Module):
         if not isinstance(data, torch.Tensor):
             data = torch.tensor(data)
         data = data.to(self._mean.device)
-        self._push(data)
+        if not self.masked:
+            self._push(data)
         if self._count <= 1:
             return data
         output = (data - self._mean) / self._std

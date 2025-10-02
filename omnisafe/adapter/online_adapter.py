@@ -30,8 +30,10 @@ from omnisafe.envs.wrapper import (
     TimeLimit,
     Unsqueeze,
     ModalityObsNormalize,
+    ModalityObsScale,
 )
 from omnisafe.typing import OmnisafeSpace
+import gymnasium
 from omnisafe.utils.config import Config
 from omnisafe.utils.tools import get_device
 
@@ -51,11 +53,11 @@ class OnlineAdapter:
     """
 
     def __init__(  # pylint: disable=too-many-arguments
-        self,
-        env_id: str,
-        num_envs: int,
-        seed: int,
-        cfgs: Config,
+            self,
+            env_id: str,
+            num_envs: int,
+            seed: int,
+            cfgs: Config,
     ) -> None:
         """Initialize an instance of :class:`OnlineAdapter`."""
         assert env_id in support_envs(), f'Env {env_id} is not supported.'
@@ -81,12 +83,28 @@ class OnlineAdapter:
 
         self._env.set_seed(seed)
 
+    def _is_continuous_action_space(self, action_space: gymnasium.spaces.Space) -> bool:
+        """Check if action space contains continuous actions.
+
+        Args:
+            action_space: The action space to check.
+
+        Returns:
+            True if the action space is Box or contains Box (for Tuple spaces).
+        """
+        if isinstance(action_space, gymnasium.spaces.Box):
+            return True
+        elif isinstance(action_space, gymnasium.spaces.Tuple):
+            # Check if first element is Box (continuous)
+            return isinstance(action_space[0], gymnasium.spaces.Box)
+        return False
+
     def _wrapper(
-        self,
-        obs_normalize: bool = True,
-        reward_normalize: bool = True,
-        cost_normalize: bool = True,
-        obs_modality_normalize: bool = True
+            self,
+            obs_normalize: bool = True,
+            reward_normalize: bool = True,
+            cost_normalize: bool = True,
+            obs_modality_normalize: bool = True
     ) -> None:
         """Wrapper the environment.
 
@@ -119,7 +137,7 @@ class OnlineAdapter:
         """
         if self._env.need_time_limit_wrapper:
             assert (
-                self._env.max_episode_steps and self._eval_env.max_episode_steps
+                    self._env.max_episode_steps and self._eval_env.max_episode_steps
             ), 'You must define max_episode_steps as an integer\
                 or cancel the use of the time_limit wrapper.'
             self._env = TimeLimit(
@@ -139,13 +157,23 @@ class OnlineAdapter:
             self._env = ObsNormalize(self._env, device=self._device)
             self._eval_env = ObsNormalize(self._eval_env, device=self._device)
         if obs_modality_normalize:
+            self._env = ModalityObsScale(
+                self._env,
+                device=self._device,
+            )
+
             self._env = ModalityObsNormalize(
                 self._env,
                 device=self._device,
-                modality_to_span=self._env.mapping,  # dictionary of modality to span, i.e {'kinematics': (0,6), 'lidar': (6,20)}
+                modality_to_span=self._env.mapping,
+                # dictionary of modality to span, i.e {'kinematics': (0,6), 'lidar': (6,20)}
                 mask_length=len(self._env.obs_names),  # list of modality names, i.e ['kinematics', 'lidar']
             )
 
+            self._eval_env = ModalityObsScale(
+                self._eval_env,
+                device=self._device,
+            )
             self._eval_env = ModalityObsNormalize(
                 self._eval_env,
                 device=self._device,
@@ -156,8 +184,11 @@ class OnlineAdapter:
             self._env = RewardNormalize(self._env, device=self._device)
         if cost_normalize:
             self._env = CostNormalize(self._env, device=self._device)
-        self._env = ActionScale(self._env, low=-1.0, high=1.0, device=self._device)
-        self._eval_env = ActionScale(self._eval_env, low=-1.0, high=1.0, device=self._device)
+
+        # Only apply ActionScale if the environment has continuous actions
+        if self._is_continuous_action_space(self._env.action_space):
+            self._env = ActionScale(self._env, low=-1.0, high=1.0, device=self._device)
+            self._eval_env = ActionScale(self._eval_env, low=-1.0, high=1.0, device=self._device)
         if self._env.num_envs == 1:
             self._env = Unsqueeze(self._env, device=self._device)
         self._eval_env = Unsqueeze(self._eval_env, device=self._device)
@@ -173,8 +204,8 @@ class OnlineAdapter:
         return self._env.observation_space
 
     def step(
-        self,
-        action: torch.Tensor,
+            self,
+            action: torch.Tensor,
     ) -> tuple[
         torch.Tensor,
         torch.Tensor,
@@ -199,9 +230,9 @@ class OnlineAdapter:
         return self._env.step(action)
 
     def reset(
-        self,
-        seed: int | None = None,
-        options: dict[str, Any] | None = None,
+            self,
+            seed: int | None = None,
+            options: dict[str, Any] | None = None,
     ) -> tuple[torch.Tensor, dict[str, Any]]:
         """Reset the environment and returns an initial observation.
 

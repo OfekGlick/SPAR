@@ -61,6 +61,7 @@ class OnPolicyAdapter(OnlineAdapter):
         agent: ConstraintActorCritic,
         buffer: VectorOnPolicyBuffer,
         logger: Logger,
+        rollout_idx: float | None = None,
     ) -> None:
         """Rollout the environment and store the data in the buffer.
 

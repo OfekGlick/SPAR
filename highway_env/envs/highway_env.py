@@ -43,10 +43,10 @@ class HighwayEnv(AbstractEnv):
                 # zero for other lanes.
                 "high_speed_reward": 0.4,  # The reward received when driving at full speed, linearly mapped to zero for
                 # lower speeds according to config["reward_speed_range"].
-                "lane_change_reward": 0,  # The reward received at each lane change action.
+                "lane_change_reward": 0.2,  # The reward received at each lane change action.
                 "reward_speed_range": [20, 30],
                 "normalize_reward": True,
-                "offroad_terminal": False,
+                "offroad_terminal": True,
             }
         )
         return config
@@ -138,8 +138,8 @@ class HighwayEnv(AbstractEnv):
         """The episode is over if the ego vehicle crashed."""
         return (
             self.vehicle.crashed
-            or self.config["offroad_terminal"]
-            and not self.vehicle.on_road
+            or (self.config["offroad_terminal"]
+            and not self.vehicle.on_road)
         )
 
     def _is_truncated(self) -> bool:

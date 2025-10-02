@@ -24,6 +24,7 @@ from typing import Any
 import numpy as np
 import torch
 import torch.nn as nn
+import gymnasium
 from gymnasium.spaces import Box
 from gymnasium.utils.save_video import save_video
 
@@ -122,6 +123,22 @@ class Evaluator:  # pylint: disable=too-many-instance-attributes
         self._dict_cfgs = kwargs
         self._cfgs = Config.dict2config(kwargs)
 
+    def _is_continuous_action_space(self, action_space: gymnasium.spaces.Space) -> bool:
+        """Check if action space contains continuous actions.
+
+        Args:
+            action_space: The action space to check.
+
+        Returns:
+            True if the action space is Box or contains Box (for Tuple spaces).
+        """
+        if isinstance(action_space, gymnasium.spaces.Box):
+            return True
+        elif isinstance(action_space, gymnasium.spaces.Tuple):
+            # Check if first element is Box (continuous)
+            return isinstance(action_space[0], gymnasium.spaces.Box)
+        return False
+
     # pylint: disable-next=too-many-branches
     def __load_model_and_env(
             self,
@@ -177,6 +194,7 @@ class Evaluator:  # pylint: disable=too-many-instance-attributes
                 per_mod_norm[mod] = Normalizer(shape=(seg_len,), clip=5)
             per_mod_norm.load_state_dict(model_params['obs_normalizer'])
 
+            # TODO: If I eventually plan to do the rescaling as a wrapper and outside the environment then adjust his part of the code
             self._env = ModalityObsNormalize(
                 self._env,
                 device=torch.device(device),
@@ -186,10 +204,11 @@ class Evaluator:  # pylint: disable=too-many-instance-attributes
             )
             self._env.freeze_stats(True)
 
-
         if self._env.need_time_limit_wrapper:
             self._env = TimeLimit(self._env, device=torch.device(device), time_limit=max_episode_steps)
-        self._env = ActionScale(self._env, device=torch.device(device), low=-1.0, high=1.0)
+
+        if self._is_continuous_action_space(self._env.action_space):
+            self._env = ActionScale(self._env, device=torch.device(device), low=-1.0, high=1.0)
 
         if hasattr(self._cfgs['algo_cfgs'], 'action_repeat'):
             self._env = ActionRepeat(
@@ -303,17 +322,21 @@ class Evaluator:  # pylint: disable=too-many-instance-attributes
             actor_type = self._cfgs['model_cfgs']['actor_type']
             pi_cfg = self._cfgs['model_cfgs']['actor']
             weight_initialization_mode = self._cfgs['model_cfgs']['weight_initialization_mode']
-            try:
+
+            # Check if action space is Tuple (multihead actor case)
+            if isinstance(action_space, gymnasium.spaces.Tuple):
+                # Multihead actor requires env_act_space and mask_act_space
                 actor_builder = ActorBuilder(
                     obs_space=observation_space,
                     act_space=action_space,
                     hidden_sizes=pi_cfg['hidden_sizes'],
                     activation=pi_cfg['activation'],
                     weight_initialization_mode=weight_initialization_mode,
-                    cont_act_space=self._env.cont_act_space,
-                    disc_act_space=self._env.disc_act_space,
+                    env_act_space=action_space[0],
+                    mask_act_space=action_space[1],
                 )
-            except AttributeError:
+            else:
+                # Standard actor (Box or Discrete action space)
                 actor_builder = ActorBuilder(
                     obs_space=observation_space,
                     act_space=action_space,

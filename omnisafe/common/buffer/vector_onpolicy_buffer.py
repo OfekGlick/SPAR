@@ -96,7 +96,10 @@ class VectorOnPolicyBuffer(OnPolicyBuffer):
     def store(self, **data: torch.Tensor) -> None:
         """Store vectorized data into vectorized buffer."""
         if isinstance(data['act'], tuple):
-            data['act'] = torch.cat(data['act'], dim=1)
+            if len(data['act'][0].shape) == 1:
+                data['act'] = torch.cat((data['act'][0].unsqueeze(1), data['act'][1]), dim=1)
+            else:
+                data['act'] = torch.cat(data['act'], dim=1)
         for i, buffer in enumerate(self.buffers):
             buffer.store(**{k: v[i] for k, v in data.items()})
 

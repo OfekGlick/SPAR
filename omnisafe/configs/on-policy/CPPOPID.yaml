@@ -47,7 +47,7 @@ defaults:
     # normalize observation
     obs_normalize: False
     # normalize observation by modality
-    obs_modality_normalize: False
+    obs_modality_normalize: True
     # early stop when kl divergence is bigger than target kl
     kl_early_stop: True
     # use max gradient norm
@@ -119,17 +119,17 @@ defaults:
     # actor network configurations
     actor:
       # hidden layer sizes
-      hidden_sizes: [256, 256, 256]
+      hidden_sizes: [256, 256]
       # activation function
-      activation: tanh
-      # out_activation: tanh
+      activation: relu
+      out_activation: tanh
       # learning rate
       lr: 0.0003
     critic:
       # hidden layer sizes
-      hidden_sizes: [256, 256, 256]
+      hidden_sizes: [256, 256]
       # activation function
-      activation: tanh
+      activation: relu
       # learning rate
       lr: 0.0003
   # lagrangian configurations

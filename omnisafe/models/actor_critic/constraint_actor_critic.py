@@ -60,11 +60,11 @@ class ConstraintActorCritic(ActorCritic):
         act_space: OmnisafeSpace,
         model_cfgs: ModelConfig,
         epochs: int,
-        cont_act_space=None,
-        disc_act_space=None,
+        env_act_space=None,
+        mask_act_space=None,
     ) -> None:
         """Initialize an instance of :class:`ConstraintActorCritic`."""
-        super().__init__(obs_space, act_space, model_cfgs, epochs, cont_act_space, disc_act_space)
+        super().__init__(obs_space, act_space, model_cfgs, epochs, env_act_space, mask_act_space)
         self.cost_critic: Critic = CriticBuilder(
             obs_space=obs_space,
             act_space=act_space,

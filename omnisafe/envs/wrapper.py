@@ -413,12 +413,22 @@ class ModalityObsNormalize(Wrapper):
             for x in (obs, reward, cost, terminated, truncated)
         )
         info['original_obs'] = obs
-        obs = self._process_observation(obs)
 
+        # First mask the original observation and update the parameters with it
         if 'unmasked_observation' in info:
             info['unmasked_observation'] = self._process_observation(
                 torch.as_tensor(info['unmasked_observation'], dtype=torch.float32, device=self._device)
             )
+       # Signal to the normalizers that we are in masked mode
+        for mod in self.modalities:
+            self._per_mod_norm[mod].masked = True
+
+        # Mask the observation and don't update the parameters before doing it
+        obs = self._process_observation(obs)
+
+        # Signal to the normalizers that we are not in masked mode anymore
+        for mod in self.modalities:
+            self._per_mod_norm[mod].masked = False
 
         if 'final_observation' in info:
             fin = torch.as_tensor(info['final_observation'], dtype=torch.float32, device=self._device)
@@ -616,45 +626,32 @@ class ActionScale(Wrapper):
     ) -> None:
         """Initialize an instance of :class:`ActionScale`."""
         super().__init__(env=env, device=device)
-        self.action_space_type = type(self.action_space)
-        if not isinstance(self.action_space, spaces.Box):
-            action_space = self.action_space[0]
+        # Original (env) continuous action space
+        if isinstance(self.action_space, spaces.Box):
+            cont_space = self.action_space
+            is_tuple = False
         else:
-            action_space = self.action_space
-        self._old_min_action: torch.Tensor = torch.tensor(
-            action_space.low,
-            dtype=torch.float32,
-            device=self._device,
-        )
-        self._old_max_action: torch.Tensor = torch.tensor(
-            action_space.high,
-            dtype=torch.float32,
-            device=self._device,
-        )
+            assert isinstance(self.action_space, spaces.Tuple), "Expected Tuple for multi-head."
+            assert isinstance(self.action_space[0], spaces.Box), "First element must be Box (continuous)."
+            cont_space = self.action_space[0]
+            is_tuple = True
 
-        min_action = np.zeros(action_space.shape, dtype=action_space.dtype) + low
-        max_action = np.zeros(action_space.shape, dtype=action_space.dtype) + high
+        # Cache original bounds (env domain)
+        self._old_min_action = torch.tensor(cont_space.low, dtype=torch.float32, device=self._device)
+        self._old_max_action = torch.tensor(cont_space.high, dtype=torch.float32, device=self._device)
 
-        if not isinstance(self.action_space, spaces.Box):
-            new_cont_action_space = self.action_space[0]
-            self._action_space = gym.spaces.Tuple((new_cont_action_space, self._env.action_space[1]))
+        # Define the *normalized* domain that the policy should output in
+        min_action = np.full(cont_space.shape, low, dtype=cont_space.dtype)
+        max_action = np.full(cont_space.shape, high, dtype=cont_space.dtype)
+        self._min_action = torch.tensor(min_action, dtype=torch.float32, device=self._device)
+        self._max_action = torch.tensor(max_action, dtype=torch.float32, device=self._device)
+
+        # Expose a normalized action_space to the agent
+        new_cont = spaces.Box(low=min_action, high=max_action, shape=cont_space.shape, dtype=cont_space.dtype)
+        if is_tuple:
+            self._action_space = spaces.Tuple((new_cont, self._env.action_space[1]))
         else:
-            self._action_space: spaces.Box = spaces.Box(
-                low=min_action,
-                high=max_action,
-                shape=action_space.shape,
-                dtype=action_space.dtype,  # type: ignore[arg-type]
-            )
-        self._min_action: torch.Tensor = torch.tensor(
-            min_action,
-            dtype=torch.float32,
-            device=self._device,
-        )
-        self._max_action: torch.Tensor = torch.tensor(
-            max_action,
-            dtype=torch.float32,
-            device=self._device,
-        )
+            self._action_space = new_cont
 
     def step(
             self,
@@ -684,16 +681,26 @@ class ActionScale(Wrapper):
             info: Some information logged by the environment.
         """
         if isinstance(self.action_space, spaces.Box):
-            action = self._old_min_action + (self._old_max_action - self._old_min_action) * (
-                    action - self._min_action
-            ) / (self._max_action - self._min_action)
-        elif isinstance(self.action_space, spaces.Tuple):
-            cont_action = action[0]
-            cont_action = self._old_min_action + (self._old_max_action - self._old_min_action) * (
-                    cont_action - self._min_action
-            ) / (self._max_action - self._min_action)
-            action = tuple((cont_action, action[1]))
-        return super().step(action)
+            # ensure tensor
+            if not torch.is_tensor(action):
+                action = torch.as_tensor(action, dtype=torch.float32, device=self._device)
+            a = torch.clamp(action, self._min_action, self._max_action)
+            scaled = self._old_min_action + (self._old_max_action - self._old_min_action) * (
+                    (a - self._min_action) / (self._max_action - self._min_action)
+            )
+            action_env = scaled
+        else:
+            # Tuple: (continuous, discrete)
+            cont_action, disc_action = action
+            if not torch.is_tensor(cont_action):
+                cont_action = torch.as_tensor(cont_action, dtype=torch.float32, device=self._device)
+            a = torch.clamp(cont_action, self._min_action, self._max_action)
+            scaled = self._old_min_action + (self._old_max_action - self._old_min_action) * (
+                    (a - self._min_action) / (self._max_action - self._min_action)
+            )
+            action_env = (scaled, disc_action)
+
+        return super().step(action_env)
 
 
 class ActionRepeat(Wrapper):
@@ -838,4 +845,39 @@ class Unsqueeze(Wrapper):
             if isinstance(v, torch.Tensor):
                 info[k] = v.unsqueeze(0)
 
+        return obs, info
+
+
+
+class ModalityObsScale(Wrapper):
+    """Scale active modality slices by M / max(1, sum(mask))."""
+
+    def __init__(self, env: CMDP, device):
+        super().__init__(env=env, device=device)
+        self.spans = dict(self.mapping)   # assumes env.mapping exists
+        self.names = list(self.spans.keys())
+        self.M = len(self.names)
+
+    def _scale(self, obs):
+        feat_dim = obs.shape[0] - self.M
+        feat, mask = obs[:feat_dim], obs[feat_dim:]
+        m = mask.sum()
+        if m.item() == 0:
+            return obs  # nothing active, skip scaling
+        scale = self.M / m
+        for j, name in enumerate(self.names):
+            if mask[j] > 0:  # active
+                s, e = self.spans[name]
+                feat[s:e] *= scale
+        return obs
+        # (above keeps it torch-y without extra allocations; feel free to just do torch.cat([feat, mask]))
+
+    def step(self, action):
+        obs, r, c, term, trunc, info = super().step(action)
+        obs = self._scale(obs)
+        return obs, r, c, term, trunc, info
+
+    def reset(self, seed=None, options=None):
+        obs, info = super().reset(seed=seed, options=options)
+        obs = self._scale(obs)
         return obs, info

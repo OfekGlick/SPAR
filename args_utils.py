@@ -42,13 +42,19 @@ def parse_arguments():
         help='total number of steps to train the agent',
     )
     parser.add_argument(
+        '--steps-per-epoch',
+        type=int,
+        default=8192,
+        help='total number of steps to train the agent',
+    )
+    parser.add_argument(
         '--budget',
         type=float,
         default=1_000,
         help='the ratio of the budget to the maximum cost per episode',
     )
     parser.add_argument(
-        '--max_episode_steps',
+        '--max-episode-steps',
         type=float,
         default=250,
         help='the maximum number of steps per episode',

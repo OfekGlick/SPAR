@@ -63,8 +63,8 @@ class ActorCritic(nn.Module):
         act_space: OmnisafeSpace,
         model_cfgs: ModelConfig,
         epochs: int,
-        cont_act_space=None,
-        disc_act_space=None,
+        env_act_space=None,
+        mask_act_space=None,
     ) -> None:
         """Initialize an instance of :class:`ActorCritic`."""
         super().__init__()
@@ -75,8 +75,8 @@ class ActorCritic(nn.Module):
             hidden_sizes=model_cfgs.actor.hidden_sizes,
             activation=model_cfgs.actor.activation,
             weight_initialization_mode=model_cfgs.weight_initialization_mode,
-            cont_act_space=cont_act_space,
-            disc_act_space=disc_act_space,
+            env_act_space=env_act_space,
+            mask_act_space=mask_act_space,
         ).build_actor(
             actor_type=model_cfgs.actor_type,
         )

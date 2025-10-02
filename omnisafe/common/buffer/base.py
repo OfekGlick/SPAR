@@ -19,7 +19,7 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 
 import torch
-from gymnasium.spaces import Box
+from gymnasium.spaces import Box, Discrete, Tuple
 
 from omnisafe.typing import DEVICE_CPU, OmnisafeSpace
 
@@ -76,8 +76,22 @@ class BaseBuffer(ABC):
             raise NotImplementedError
         if isinstance(act_space, Box):
             act_buf = torch.zeros((size, *act_space.shape), dtype=torch.float32, device=device)
-        else:
-            act_buf = torch.zeros((size, act_space[0].shape[0] + act_space[1].shape[0]), dtype=torch.float32, device=device)
+        elif isinstance(act_space, Discrete):
+            act_buf = torch.zeros((size, 1), dtype=torch.float32, device=device)
+
+        elif isinstance(act_space, Tuple):
+            if isinstance(act_space, Box):
+                act_buf = torch.zeros(
+                    (size, act_space[0].shape[0] + act_space[1].shape[0]),
+                    dtype=torch.float32,
+                    device=device,
+                )
+            else:
+                act_buf = torch.zeros(
+                    (size, 1 + act_space[1].shape[0]),
+                    dtype=torch.float32,
+                    device=device,
+                )
 
         self.data: dict[str, torch.Tensor] = {
             'obs': obs_buf,
