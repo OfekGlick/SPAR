@@ -26,7 +26,6 @@ import torch
 import torch.nn as nn
 import gymnasium
 from gymnasium.spaces import Box
-from gymnasium.utils.save_video import save_video
 
 from omnisafe.algorithms.model_based.base.ensemble import EnsembleDynamicsModel
 from omnisafe.algorithms.model_based.planner import (
@@ -425,7 +424,15 @@ class Evaluator:  # pylint: disable=too-many-instance-attributes
             current_episode_masks = []
             obs, _ = self._env.reset()
             # Ensure _safety_obs is on the same device as observations
-            self._safety_obs = torch.ones(1, device=obs.device)
+            # Handle both tensor and dict observations
+            if isinstance(obs, torch.Tensor):
+                device = obs.device
+            elif isinstance(obs, dict):
+                # Get device from any tensor value in dict, default to cpu
+                device = next((v.device for v in obs.values() if isinstance(v, torch.Tensor)), torch.device('cpu'))
+            else:
+                device = torch.device('cpu')
+            self._safety_obs = torch.ones(1, device=device)
             ep_ret, ep_cost, length = 0.0, 0.0, 0.0
 
             done = False
@@ -524,7 +531,7 @@ class Evaluator:  # pylint: disable=too-many-instance-attributes
 
     def render(  # pylint: disable=too-many-locals,too-many-arguments,too-many-branches,too-many-statements
             self,
-            num_episodes: int = 1,
+            num_episodes: int = 10,
             save_replay_path: str | None = None,
             max_render_steps: int = 2000,
             cost_criteria: float = 1.0,
@@ -545,26 +552,27 @@ class Evaluator:  # pylint: disable=too-many-instance-attributes
                 self._actor is not None or self._planner is not None
         ), 'The policy or planner must be provided or created before rendering.'
         if save_replay_path is None:
-            save_replay_path = os.path.join(self._save_dir, 'video', self._model_name.split('.')[0])
+            save_replay_path = os.path.join(self._save_dir, 'results', self._model_name.split('.')[0])
+        os.makedirs(save_replay_path, exist_ok=True)
         result_path = os.path.join(save_replay_path, 'result.txt')
         print(self._dividing_line)
-        print(f'Saving the replay video to {save_replay_path},\n and the result to {result_path}.')
+        print(f'Saving the results to {result_path}.')
         print(self._dividing_line)
-
-        horizon = 250
-        frames = []
-        obs, _ = self._env.reset()
-        if self._render_mode == 'human':
-            self._env.render()
-        elif self._render_mode == 'rgb_array':
-            frames.append(self._env.render())
 
         episode_rewards: list[float] = []
         episode_costs: list[float] = []
         episode_lengths: list[float] = []
 
         for episode_idx in range(num_episodes):
-            self._safety_obs = torch.ones(1)
+            obs, _ = self._env.reset()
+            # Handle both tensor and dict observations
+            if isinstance(obs, torch.Tensor):
+                device = obs.device
+            elif isinstance(obs, dict):
+                device = next((v.device for v in obs.values() if isinstance(v, torch.Tensor)), torch.device('cpu'))
+            else:
+                device = torch.device('cpu')
+            self._safety_obs = torch.ones(1, device=device)
             step = 0
             done = False
             ep_ret, ep_cost, length = 0.0, 0.0, 0.0
@@ -572,6 +580,7 @@ class Evaluator:  # pylint: disable=too-many-instance-attributes
                     not done and step <= max_render_steps
             ):  # a big number to make sure the episode will end
                 if 'Saute' in self._cfgs['algo'] or 'Simmer' in self._cfgs['algo']:
+                    self._safety_obs = self._safety_obs.to(obs.device)
                     obs = torch.cat([obs, self._safety_obs], dim=-1)
                 with torch.no_grad():
                     if self._actor is not None:
@@ -589,7 +598,7 @@ class Evaluator:  # pylint: disable=too-many-instance-attributes
                         raise ValueError(
                             'The policy must be provided or created before evaluating the agent.',
                         )
-                obs, rew, cost, terminated, truncated, _ = self._env.step(act)
+                obs, rew, cost, terminated, truncated, info = self._env.step(act)
                 if 'Saute' in self._cfgs['algo'] or 'Simmer' in self._cfgs['algo']:
                     self._safety_obs -= cost.unsqueeze(-1) / self._safety_budget
                     self._safety_obs /= self._cfgs.algo_cfgs.saute_gamma
@@ -604,23 +613,6 @@ class Evaluator:  # pylint: disable=too-many-instance-attributes
                     terminated = torch.as_tensor(True)
                 length += 1
 
-                if self._render_mode == 'rgb_array':
-                    frames.append(self._env.render())
-
-            if self._render_mode == 'rgb_array_list':
-                frames = self._env.render()
-            if save_replay_path is not None:
-                save_video(
-                    frames,
-                    save_replay_path,
-                    fps=self.fps,
-                    episode_trigger=lambda x: True,
-                    video_length=horizon,
-                    episode_index=episode_idx,
-                    name_prefix='eval',
-                )
-            self._env.reset()
-            frames = []
             episode_rewards.append(ep_ret)
             episode_costs.append(ep_cost)
             episode_lengths.append(length)
@@ -629,10 +621,12 @@ class Evaluator:  # pylint: disable=too-many-instance-attributes
                 print(f'Episode reward: {ep_ret}', file=f)
                 print(f'Episode cost: {ep_cost}', file=f)
                 print(f'Episode length: {length}', file=f)
+
         with open(result_path, 'a+', encoding='utf-8') as f:
-            print(self._dividing_line)
+            print(self._dividing_line, file=f)
             print('Evaluation results:', file=f)
             print(f'Average episode reward: {np.mean(episode_rewards)}', file=f)
             print(f'Average episode cost: {np.mean(episode_costs)}', file=f)
             print(f'Average episode length: {np.mean(episode_lengths)}', file=f)
-        self._env.close()
+
+        # No need to close env here - it's managed by the evaluator

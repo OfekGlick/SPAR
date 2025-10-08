@@ -319,7 +319,7 @@ class AlgoWrapper:
             key=f'{self.algo}_(sensor_used_mean)_(sensor_used_std)',
             value=[average_sensor_used, std_sensor_used],
         )
-        self.render(num_episodes=2, render_mode="rgb_array", width=256, height=256)
+        self.render(num_episodes=10, render_mode="rgb_array", width=256, height=256)
         sensor_costs = results['sensor_costs']
         if not self.custom_cfgs['env_cfgs']['use_all_obs']:
             obs_mask_data = wandb.Table(

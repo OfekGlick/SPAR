@@ -367,39 +367,3 @@ class BudgetAwareHighway(gym.Wrapper, CMDP):
         part = flat_obs[s:e]
         return part.reshape(self.shapes[obs_name]) if reshape else part
 
-# if __name__ == '__main__':
-#     custom_cfgs = {
-#         'train_cfgs': {
-#             'total_steps': 10,
-#             'vector_env_nums': 1,
-#             'parallel': 1,
-#             'device': f'cuda:0' if torch.cuda.is_available() else 'cpu'
-#         },
-#         'algo_cfgs': {
-#             'steps_per_epoch': 2,
-#             'update_iters': 2,
-#             'batch_size': 512,
-#             'kl_early_stop': True,
-#         },
-#         'model_cfgs': {
-#             'actor_type': 'multihead'
-#         },
-#         'logger_cfgs': {
-#             'wandb_project': 'BAFS 2.0',
-#             'use_wandb': True,
-#         },
-#         'env_cfgs': {
-#             'use_all_obs': False,
-#             'max_episode_steps': 5,
-#             "action": {
-#                 "type": "ContinuousAction"
-#             },
-#             'seed': 42,
-#         },
-#     }
-#
-#     agent = omnisafe.Agent("CPO", "budget-aware-roundabout-v0", custom_cfgs=custom_cfgs)
-#     # if args.use_all_obs:
-#     #     agent.sample_random_actions(num_episodes=1_000, max_episode_length=500)
-#     agent.learn()
-#     agent.evaluate(num_episodes=5)

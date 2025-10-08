@@ -80,7 +80,7 @@ class BaseBuffer(ABC):
             act_buf = torch.zeros((size, 1), dtype=torch.float32, device=device)
 
         elif isinstance(act_space, Tuple):
-            if isinstance(act_space, Box):
+            if isinstance(act_space[0], Box):
                 act_buf = torch.zeros(
                     (size, act_space[0].shape[0] + act_space[1].shape[0]),
                     dtype=torch.float32,
