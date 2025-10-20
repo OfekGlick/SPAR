@@ -26,6 +26,9 @@ import torch
 import torch.nn as nn
 import gymnasium
 from gymnasium.spaces import Box
+from gymnasium.utils.save_video import save_video
+import cv2
+import wandb
 
 from omnisafe.algorithms.model_based.base.ensemble import EnsembleDynamicsModel
 from omnisafe.algorithms.model_based.planner import (
@@ -43,8 +46,6 @@ from omnisafe.models.actor import ActorBuilder
 from omnisafe.models.actor_critic import ConstraintActorCritic, ConstraintActorQCritic
 from omnisafe.models.base import Actor
 from omnisafe.utils.config import Config
-
-import wandb
 
 
 class Evaluator:  # pylint: disable=too-many-instance-attributes
@@ -397,12 +398,18 @@ class Evaluator:  # pylint: disable=too-many-instance-attributes
             self,
             num_episodes: int = 10,
             cost_criteria: float = 1.0,
+            record_video: bool = False,
+            video_top_k: int = 10,
+            video_metric: str = 'reward',
     ) -> tuple[list[float], list[float]]:
         """Evaluate the agent for num_episodes episodes.
 
         Args:
             num_episodes (int, optional): The number of episodes to evaluate. Defaults to 10.
             cost_criteria (float, optional): The cost criteria. Defaults to 1.0.
+            record_video (bool, optional): Whether to record video with sensor overlays. Defaults to False.
+            video_top_k (int, optional): If recording, save only top-K episodes. Defaults to 10.
+            video_metric (str, optional): Selection metric for top-K videos: 'reward' or 'length'. Defaults to 'reward'.
 
         Returns:
             (episode_rewards, episode_costs): The episode rewards and costs.
@@ -419,9 +426,12 @@ class Evaluator:  # pylint: disable=too-many-instance-attributes
         episode_costs: list[float] = []
         episode_obs_masks = []
         episode_lengths: list[float] = []
+        all_episode_frames = [] if record_video else None
+        all_episode_masks = [] if record_video else None
 
         for episode in range(num_episodes):
             current_episode_masks = []
+            current_episode_frames = [] if record_video else None
             obs, _ = self._env.reset()
             # Ensure _safety_obs is on the same device as observations
             # Handle both tensor and dict observations
@@ -462,6 +472,13 @@ class Evaluator:  # pylint: disable=too-many-instance-attributes
                     current_episode_masks.append(info['sensor_mask'])
                 except KeyError:
                     pass
+
+                # Collect frames if recording video
+                if record_video:
+                    frame = self._env.render()
+                    if frame is not None:
+                        current_episode_frames.append(frame)
+
                 if 'Saute' in self._cfgs['algo'] or 'Simmer' in self._cfgs['algo']:
                     self._safety_obs -= cost.unsqueeze(-1) / self._safety_budget
                     self._safety_obs /= self._cfgs.algo_cfgs.saute_gamma
@@ -481,6 +498,12 @@ class Evaluator:  # pylint: disable=too-many-instance-attributes
             episode_rewards.append(ep_ret)
             episode_costs.append(ep_cost)
             episode_lengths.append(length)
+
+            # Store frames and masks for video generation
+            if record_video and current_episode_frames:
+                all_episode_frames.append(current_episode_frames)
+                all_episode_masks.append(current_episode_masks)
+
             wandb.log({"Evaluation/EpReward": ep_ret, "Evaluation/EpCost": ep_cost})
             print(f'Episode {episode + 1} results:')
             print(f'Episode reward: {ep_ret}')
@@ -507,8 +530,142 @@ class Evaluator:  # pylint: disable=too-many-instance-attributes
             "sensor_names": self._env.obs_names,
         }
 
+        # Generate videos with sensor overlays if requested
+        if record_video and all_episode_frames:
+            # Select top-K episodes by the requested metric
+            metric_values = episode_rewards if video_metric.lower() == 'reward' else episode_lengths
+            # Determine number to keep
+            k = max(0, min(video_top_k, len(metric_values)))
+            if k > 0:
+                # argsort returns ascending; reverse for descending (best first)
+                top_indices = list(np.argsort(metric_values)[::-1][:k])
+
+                selected_frames = [all_episode_frames[i] for i in top_indices]
+                selected_masks = [all_episode_masks[i] for i in top_indices]
+                selected_rewards = [episode_rewards[i] for i in top_indices]
+                selected_costs = [episode_costs[i] for i in top_indices]
+
+                self._generate_sensor_videos(
+                    selected_frames,
+                    selected_masks,
+                    self._env.obs_names,
+                    selected_rewards,
+                    selected_costs,
+                    episode_indices=top_indices,
+                )
+
         self._env.close()
         return results
+
+    def _generate_sensor_videos(
+            self,
+            all_episode_frames: list[list[np.ndarray]],
+            all_episode_masks: list[list[np.ndarray]],
+            sensor_names: list[str],
+            episode_rewards: list[float],
+            episode_costs: list[float],
+            episode_indices: list[int] | None = None,
+    ) -> None:
+        """Generate videos with sensor overlay annotations.
+
+        Args:
+            all_episode_frames: List of frame lists for each episode
+            all_episode_masks: List of mask lists for each episode
+            sensor_names: Names of sensors/modalities
+            episode_rewards: Rewards for each episode
+            episode_costs: Costs for each episode
+        """
+        video_dir = os.path.join(self._save_dir, 'evaluation_videos')
+        os.makedirs(video_dir, exist_ok=True)
+
+        print(f'\nGenerating evaluation videos with sensor overlays...')
+        print(f'Saving to: {video_dir}')
+
+        for ep_idx, (frames, masks) in enumerate(zip(all_episode_frames, all_episode_masks)):
+            if not frames:
+                continue
+
+            # Create annotated frames
+            annotated_frames = []
+            cumulative_cost = 0.0
+
+            for frame_idx, frame in enumerate(frames):
+                # Convert to BGR for OpenCV if needed
+                if len(frame.shape) == 3 and frame.shape[2] == 3:
+                    annotated_frame = frame.copy()
+                else:
+                    annotated_frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
+
+                # Get current sensor mask (handle case where masks might be shorter than frames)
+                if frame_idx < len(masks):
+                    current_mask = masks[frame_idx]
+                    cumulative_cost += np.sum(current_mask)
+                else:
+                    current_mask = np.zeros(len(sensor_names))
+
+                # Add black semi-transparent overlay area at top
+                h, w = annotated_frame.shape[:2]
+                overlay_height = 30 + (len(sensor_names) * 25)
+                overlay = annotated_frame.copy()
+                cv2.rectangle(overlay, (0, 0), (w, overlay_height), (0, 0, 0), -1)
+                annotated_frame = cv2.addWeighted(annotated_frame, 0.6, overlay, 0.4, 0)
+
+                # Add episode info
+                # Use original episode index if provided for labeling
+                orig_ep = (episode_indices[ep_idx] + 1) if episode_indices is not None else (ep_idx + 1)
+                cv2.putText(
+                    annotated_frame,
+                    f'Episode {orig_ep} | Step {frame_idx + 1}/{len(frames)} | Cost: {cumulative_cost:.1f}',
+                    (10, 20),
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    0.5,
+                    (255, 255, 255),
+                    1,
+                    cv2.LINE_AA,
+                )
+
+                # Add sensor status for each modality
+                y_offset = 45
+                for i, sensor_name in enumerate(sensor_names):
+                    is_active = current_mask[i] > 0.5 if i < len(current_mask) else False
+                    color = (0, 255, 0) if is_active else (0, 0, 255)  # Green if active, red if inactive
+                    status = "ON " if is_active else "OFF"
+
+                    cv2.putText(
+                        annotated_frame,
+                        f'{sensor_name}: {status}',
+                        (10, y_offset),
+                        cv2.FONT_HERSHEY_SIMPLEX,
+                        0.4,
+                        color,
+                        1,
+                        cv2.LINE_AA,
+                    )
+                    y_offset += 25
+
+                annotated_frames.append(annotated_frame)
+
+            # Save video using gymnasium's save_video
+            save_video(
+                annotated_frames,
+                video_dir,
+                fps=self.fps,
+                episode_trigger=lambda x: True,
+                episode_index=ep_idx,
+                name_prefix=f'eval_ep{(episode_indices[ep_idx] + 1) if episode_indices is not None else (ep_idx + 1)}_reward{episode_rewards[ep_idx]:.1f}_cost{episode_costs[ep_idx]:.1f}',
+            )
+
+            # Log to wandb
+            video_path = os.path.join(
+                video_dir,
+                f'eval_ep{(episode_indices[ep_idx] + 1) if episode_indices is not None else (ep_idx + 1)}_reward{episode_rewards[ep_idx]:.1f}_cost{episode_costs[ep_idx]:.1f}-episode-{ep_idx}.mp4',
+            )
+            if os.path.exists(video_path):
+                wandb.log({
+                    f"Evaluation/Video_Episode_{ep_idx + 1}": wandb.Video(video_path, fps=self.fps, format="mp4")
+                })
+
+        print(f'Generated {len(all_episode_frames)} evaluation videos')
 
     @property
     def fps(self) -> int:

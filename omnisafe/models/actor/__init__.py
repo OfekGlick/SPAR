@@ -21,3 +21,5 @@ from omnisafe.models.actor.gaussian_sac_actor import GaussianSACActor
 from omnisafe.models.actor.mlp_actor import MLPActor
 from omnisafe.models.actor.perturbation_actor import PerturbationActor
 from omnisafe.models.actor.vae_actor import VAE
+from omnisafe.models.actor.random_mask_actor_continuous import RandomMaskActorContinuous
+from omnisafe.models.actor.random_mask_actor_discrete import RandomMaskActorDiscrete

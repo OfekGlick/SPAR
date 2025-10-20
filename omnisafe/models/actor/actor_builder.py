@@ -24,6 +24,8 @@ from omnisafe.models.base import Actor
 from omnisafe.typing import Activation, ActorType, InitFunction, OmnisafeSpace
 from omnisafe.models.actor.multiheadactor import MultiHeadActor
 from omnisafe.models.actor.multihead_discrete_actor import MultiHeadDiscreteActor
+from omnisafe.models.actor.random_mask_actor_continuous import RandomMaskActorContinuous
+from omnisafe.models.actor.random_mask_actor_discrete import RandomMaskActorDiscrete
 from gymnasium import spaces
 
 # pylint: disable-next=too-few-public-methods
@@ -158,8 +160,39 @@ class ActorBuilder:
                     shared_hidden_sizes=[256, 256],
                     weight_initialization_mode=self._weight_initialization_mode,
                 )
+        if actor_type == 'random_mask':
+            # Random mask baseline: learns environment actions but uses random modality masks
+            # Dynamically determine if we need continuous or discrete version
+            if not isinstance(self._act_space, spaces.Tuple):
+                raise ValueError(
+                    f"Random mask actor requires Tuple action space, got {type(self._act_space)}"
+                )
+
+            # Check if first element of Tuple is Box (continuous) or Discrete
+            if isinstance(self._act_space[0], spaces.Box):
+                # Continuous environment action + random mask
+                return RandomMaskActorContinuous(
+                    obs_space=self._obs_space,
+                    cont_act_space=self._act_space[0],
+                    disc_act_space=self._act_space[1],
+                    hidden_sizes=self._hidden_sizes,
+                    activation=self._activation,
+                    shared_hidden_sizes=[256, 256],
+                    weight_initialization_mode=self._weight_initialization_mode,
+                )
+            else:
+                # Discrete environment action + random mask
+                return RandomMaskActorDiscrete(
+                    obs_space=self._obs_space,
+                    disc_act_space=self._act_space[0],
+                    disc_mask_space=self._act_space[1],
+                    hidden_sizes=self._hidden_sizes,
+                    activation=self._activation,
+                    shared_hidden_sizes=[256, 256],
+                    weight_initialization_mode=self._weight_initialization_mode,
+                )
         raise NotImplementedError(
             f'Actor type {actor_type} is not implemented! '
             f'Available actor types are: gaussian_learning, gaussian_sac, mlp, vae, perturbation, '
-            f'categorical_learning, multihead.',
+            f'categorical_learning, multihead, random_mask.',
         )

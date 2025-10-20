@@ -135,7 +135,18 @@ class AlgoWrapper:
         use_all_obs = '-use_all_obs' if cfgs['env_cfgs']['use_all_obs'] else ""
         sd_reg_str = '-sd_reg' if cfgs['algo_cfgs']['sd_regulizer'] else ''
         zero_act_str = '-zero_act' if cfgs['algo_cfgs']['no_zero_act'] else ''
-        exp_name = f'{self.algo}-{self.env_id.split("budget-aware-")[1]}{use_cost}{use_all_obs}{sd_reg_str}{zero_act_str}'
+        random_mask_str = '-random_mask' if cfgs['model_cfgs'].get('actor_type') == 'random_mask' else ''
+        if 'lagrange_cfgs' not in cfgs.keys():
+            budget_str = ''
+        else:
+            if 'cost_limit' not in cfgs['lagrange_cfgs'].keys():
+                budget_str = ''
+            else:
+                budget_str = f'Budget{int(cfgs["lagrange_cfgs"]["cost_limit"])}'
+
+
+
+        exp_name = f'{self.algo}-{self.env_id.split("budget-aware-")[1]}{use_all_obs}{sd_reg_str}{zero_act_str}{random_mask_str}-{budget_str}'
         cfgs.recurisve_update({'exp_name': exp_name, 'env_id': self.env_id, 'algo': self.algo})
         cfgs.train_cfgs.recurisve_update(
             {'epochs': cfgs.train_cfgs.total_steps // cfgs.algo_cfgs.steps_per_epoch},
@@ -280,12 +291,13 @@ class AlgoWrapper:
             self.agent.logger.log_dir,
         )
 
-    def evaluate(self, num_episodes: int = 10, cost_criteria: float = 1.0) -> None:
+    def evaluate(self, num_episodes: int = 10, cost_criteria: float = 1.0, record_video: bool = True) -> None:
         """Agent Evaluation.
 
         Args:
             num_episodes (int, optional): number of episodes to evaluate. Defaults to 10.
             cost_criteria (float, optional): the cost criteria to evaluate. Defaults to 1.0.
+            record_video (bool, optional): whether to record video with sensor overlays. Defaults to True.
 
         Raises:
             AssertionError: If the :meth:`learn` method has not been called.
@@ -293,29 +305,39 @@ class AlgoWrapper:
         assert self._evaluator is not None, 'Please run learn() first!'
         scan_dir = os.scandir(os.path.join(self.agent.logger.log_dir, 'torch_save'))
         item = [item for item in scan_dir if item.is_file() and item.name.split('.')[-1] == 'pt'][-1]
-        self._evaluator.load_saved(save_dir=self.agent.logger.log_dir, model_name=item.name)
-        results = self._evaluator.evaluate(num_episodes=num_episodes, cost_criteria=cost_criteria)
+        self._evaluator.load_saved(save_dir=self.agent.logger.log_dir, model_name=item.name, render_mode='rgb_array')
+        results = self._evaluator.evaluate(num_episodes=num_episodes, cost_criteria=cost_criteria, record_video=record_video)
         obs_masks = np.mean(a=results['episode_obs_masks'], axis=0)
         average_sensor_used = np.mean(results['episode_obs_masks'], axis=0).tolist()
         std_sensor_used = np.std(results['episode_obs_masks'], axis=0).tolist()
         average_episode_rewards = results['episode_rewards']
         average_episode_costs = results['episode_costs']
-        all_obs = 'AllObs' if self.custom_cfgs['env_cfgs']['use_all_obs'] else 'SelectedObs'
-        budget_str = f'Budget{self.custom_cfgs['algo_cfgs']['cost_limit']}' if 'cost_limit' in self.custom_cfgs[
-            'algo_cfgs'].keys() else 'BudgetNone'
+
+        # Determine observation mode for bucket naming
+        if self.custom_cfgs['env_cfgs']['use_all_obs']:
+            obs_mode = 'AllObs'
+        elif self.custom_cfgs['model_cfgs'].get('actor_type') == 'random_mask':
+            obs_mode = 'RandomMask'
+        else:
+            obs_mode = 'SelectedObs'
+
+        if 'lagrange_cfgs' not in self.custom_cfgs.keys():
+            self.custom_cfgs['lagrange_cfgs'] = {}
+        budget_str = f'Budget{int(self.custom_cfgs['lagrange_cfgs']['cost_limit'])}' if 'cost_limit' in self.custom_cfgs[
+            'lagrange_cfgs'].keys() else 'BudgetNone'
         steps_str = self.custom_cfgs['train_cfgs']['total_steps']
         self._merge_rliable_json(
-            bucket=self.env_id + f'_{all_obs}' + f'_{budget_str}' + f'_{steps_str}_steps',
+            bucket=self.env_id + f'_{obs_mode}' + f'_{budget_str}' + f'_{steps_str}_steps',
             key=f'{self.algo}_reward',
             value=np.mean(average_episode_rewards),
         )
         self._merge_rliable_json(
-            bucket=self.env_id + f'_{all_obs}' + f'_{budget_str}' + f'_{steps_str}_steps',
+            bucket=self.env_id + f'_{obs_mode}' + f'_{budget_str}' + f'_{steps_str}_steps',
             key=f'{self.algo}_cost',
             value=np.mean(average_episode_costs),
         )
         self._merge_rliable_json(
-            bucket=self.env_id + f'_{all_obs}' + f'_{budget_str}' + f'_{steps_str}_steps',
+            bucket=self.env_id + f'_{obs_mode}' + f'_{budget_str}' + f'_{steps_str}_steps',
             key=f'{self.algo}_(sensor_used_mean)_(sensor_used_std)',
             value=[average_sensor_used, std_sensor_used],
         )

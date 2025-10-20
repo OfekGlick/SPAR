@@ -62,7 +62,6 @@ class PPO(PolicyGradient):
         else:
             entropy = distribution.entropy().mean()
         loss -= self._cfgs.algo_cfgs.entropy_coef * entropy
-        # TODO: track behaviour and make sure this doesn't break anything
         # >>> NEW: zero-barrier regularizer (disc head: Bernoulli over sensors)
         if isinstance(distribution, tuple) and hasattr(distribution[1], 'probs'):
             if self._cfgs.algo_cfgs.no_zero_act:

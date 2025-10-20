@@ -6,17 +6,17 @@ import torch
 import gymnasium as gym
 from gymnasium import spaces
 from omnisafe.envs.core import make as omnisafe_make
-import budget_aware_robosuite
+from bafs_envs import budget_aware_robosuite
 
 custom_cfgs = {
     'train_cfgs': {
-        'total_steps': 250_000,  # 500 epochs × 500 steps (robosuite benchmark)
+        'total_steps': 409_600,  # 500 epochs × 500 steps (robosuite benchmark)
         'vector_env_nums': 1,
         'parallel': 1,
         'device': f'cuda:0' if torch.cuda.is_available() else 'cpu'
     },
     'algo_cfgs': {
-        'steps_per_epoch': 500,  # Match robosuite horizon
+        'steps_per_epoch': 8192,  # Match robosuite horizon
         'update_iters': 40,
         'batch_size': 2048,      # Typical for PPO with robosuite
         'gamma': 0.99,
@@ -24,14 +24,15 @@ custom_cfgs = {
         'zero_barrier_coef': 0.1,    # strength of the regularizer
         'kl_early_stop': False,
         'target_kl': 0.5,
+        'obs_modality_normalize': False,  # Disable modality-specific normalization
     },
     'model_cfgs': {
         'actor_type': 'auto',  # Auto-detect based on action space
         'actor': {
-            'hidden_sizes': [256, 256],  # Larger network for robosuite
+            'hidden_sizes': [256, 256, 256],  # Larger network for robosuite
         },
         'critic': {
-            'hidden_sizes': [256, 256],
+            'hidden_sizes': [256, 256, 256],  # Larger network for robosuite
         }
     },
     'logger_cfgs': {
@@ -39,20 +40,17 @@ custom_cfgs = {
         'use_wandb': True,
     },
     'env_cfgs': {
-        'use_all_obs': False,
         'max_episode_steps': 500,  # Robosuite benchmark standard
         'robot': 'Panda',          # Recommended robot for benchmarking
-        # 'controller_name': 'OSC_POSE',  # Operational Space Controller
         'control_freq': 20,
         'reward_scale': 1.0,
         'reward_shaping': True,    # Dense rewards for better learning
-        'seed': 42,
 
         # Modality costs (can be adjusted)
         'modality_costs': {
-            'robot_proprioception': 0.5,  # Joint states, EEF pose, gripper
+            'robot_proprioception': 1.0,  # Joint states, EEF pose, gripper
             'object_states': 1.0,          # Object positions/orientations
-            'task_features': 0.3,          # Relative distances, task-specific
+            'task_features': 1.0,          # Relative distances, task-specific
         },
     },
 }
@@ -94,6 +92,13 @@ def adjust_config(custom_cfgs, args):
     custom_cfgs['env_cfgs']['seed'] = args.seed
     custom_cfgs['algo_cfgs']['sd_regulizer'] = args.sd_regulizer
     custom_cfgs['algo_cfgs']['no_zero_act'] = args.no_zero_act
+
+    # Random mask baseline: override actor type and ensure proper env config
+    if args.random_obs_selection:
+        custom_cfgs['model_cfgs']['actor_type'] = 'random_mask'
+        custom_cfgs['env_cfgs']['use_all_obs'] = False  # Must use BAFS env with masks
+        print("=== RANDOM MASK BASELINE MODE ===")
+        print("Actor will learn environment actions but use random modality selection")
 
 
 def detect_actor_type(env_id, env_cfgs):

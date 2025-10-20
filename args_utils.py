@@ -30,6 +30,11 @@ def parse_arguments():
         help='whether to use all observations always or not',
     )
     parser.add_argument(
+        '--random-obs-selection',
+        action='store_true',
+        help='use random modality selection baseline (learns env actions, random masks)',
+    )
+    parser.add_argument(
         '--eval-num-episodes',
         type=int,
         default=1_000,

@@ -84,6 +84,11 @@ class BudgetAwareRobosuite(gym.Wrapper, CMDP):
         use_all_obs: bool = False,
         cast_dtype: np.dtype = np.float32,
         max_episode_steps: Optional[int] = None,
+        sensor_dropout_rescale: bool = True,
+        use_camera: bool = False,
+        camera_name: str = "agentview",
+        camera_height: int = 32,
+        camera_width: int = 32,
         **kwargs: Any,
     ):
         """
@@ -119,15 +124,32 @@ class BudgetAwareRobosuite(gym.Wrapper, CMDP):
         else:
             self._device = 'cuda:0' if torch.cuda.is_available() else 'cpu'
 
+        # Filter out gymnasium-specific parameters that robosuite doesn't accept
+        env_kwargs.pop('render_mode', None)
+
+        # Store camera settings
+        self.use_camera = use_camera
+        self.camera_name = camera_name
+        self.camera_height = camera_height
+        self.camera_width = camera_width
+        self._camera_dim = camera_height * camera_width if use_camera else 0
+
         # Set default parameters for robosuite
         horizon = max_episode_steps or 500
         env_kwargs.setdefault('horizon', horizon)
-        env_kwargs.setdefault('use_camera_obs', False)
+        env_kwargs.setdefault('use_camera_obs', use_camera)
         env_kwargs.setdefault('use_object_obs', True)
         env_kwargs.setdefault('has_renderer', False)
-        env_kwargs.setdefault('has_offscreen_renderer', False)
+        env_kwargs.setdefault('has_offscreen_renderer', use_camera)  # Need offscreen for camera
         env_kwargs.setdefault('reward_shaping', True)
         env_kwargs.setdefault('control_freq', 20)
+
+        # Camera configuration
+        if use_camera:
+            env_kwargs.setdefault('camera_names', camera_name)
+            env_kwargs.setdefault('camera_heights', camera_height)
+            env_kwargs.setdefault('camera_widths', camera_width)
+            env_kwargs.setdefault('camera_depths', False)  # No depth, just RGB
 
         # Create base robosuite environment
         robosuite_env = suite.make(
@@ -137,9 +159,14 @@ class BudgetAwareRobosuite(gym.Wrapper, CMDP):
             **env_kwargs,
         )
 
+        # Get all available observation keys from the environment
+        # This ensures we include task-specific features (e.g., cube position in Lift)
+        obs_spec = robosuite_env.observation_spec()
+        all_obs_keys = list(obs_spec.keys())
+
         # Wrap with GymWrapper to make it gymnasium-compatible
-        # Use flatten_obs=True to get a single flat array
-        gym_env = GymWrapper(robosuite_env, keys=None, flatten_obs=True)
+        # Use all available keys (not just defaults) and flatten_obs=True
+        gym_env = GymWrapper(robosuite_env, keys=all_obs_keys, flatten_obs=True)
 
         super().__init__(gym_env)
 
@@ -148,6 +175,7 @@ class BudgetAwareRobosuite(gym.Wrapper, CMDP):
         self.cast_dtype = cast_dtype
         self._max_episode_steps = horizon
         self.seed_value = seed
+        self.sensor_dropout_rescale = bool(sensor_dropout_rescale)
 
         # ── Build modality groups from GymWrapper's keys ──────────────────────
         # GymWrapper stores the keys it uses in self.env.keys
@@ -170,12 +198,13 @@ class BudgetAwareRobosuite(gym.Wrapper, CMDP):
 
         cursor = 0
         for mod_name, mod_keys in modality_groups.items():
-            # Find keys that exist in both the modality group and actual observations
+            # Find keys that exist in both the modality group and GymWrapper's keys
             existing_keys = []
             mod_size = 0
 
             for key in mod_keys:
-                if key in temp_obs_dict:
+                # Only include keys that GymWrapper is actually using
+                if key in obs_keys and key in temp_obs_dict:
                     val = temp_obs_dict[key]
                     if isinstance(val, np.ndarray):
                         existing_keys.append(key)
@@ -186,6 +215,16 @@ class BudgetAwareRobosuite(gym.Wrapper, CMDP):
                 self.mapping[mod_name] = (cursor, cursor + mod_size)
                 self.mod_sizes[mod_name] = mod_size
                 cursor += mod_size
+
+        # Add camera modality if enabled
+        if self.use_camera:
+            self._obs_keys_by_modality["camera"] = [f"{camera_name}_image"]
+            self.mapping["camera"] = (cursor, cursor + self._camera_dim)
+            self.mod_sizes["camera"] = self._camera_dim
+            cursor += self._camera_dim
+
+        # Store robosuite_env reference for camera access
+        self.robosuite_env = robosuite_env
 
         # Final modality names (only non-empty ones)
         self.obs_names = list(self.mapping.keys())
@@ -198,6 +237,14 @@ class BudgetAwareRobosuite(gym.Wrapper, CMDP):
         if self.cast_dtype is not None:
             base_low = base_low.astype(self.cast_dtype, copy=False)
             base_high = base_high.astype(self.cast_dtype, copy=False)
+
+        # Expand observation space to include camera
+        if self.use_camera:
+            # Camera pixels are in [0, 255] range, normalize to [0, 1]
+            camera_low = np.zeros(self._camera_dim, dtype=base_low.dtype)
+            camera_high = np.ones(self._camera_dim, dtype=base_high.dtype)
+            base_low = np.concatenate([base_low, camera_low], axis=0)
+            base_high = np.concatenate([base_high, camera_high], axis=0)
 
         self._base_low = base_low
         self._base_high = base_high
@@ -276,6 +323,39 @@ class BudgetAwareRobosuite(gym.Wrapper, CMDP):
             return x.detach().cpu().numpy()
         return np.asarray(x)
 
+    def _get_camera_obs(self) -> np.ndarray:
+        """Get grayscale camera observation from robosuite environment.
+
+        Returns:
+            Flattened grayscale image normalized to [0, 1], shape: (camera_height * camera_width,)
+        """
+        if not self.use_camera:
+            return np.array([], dtype=np.float32)
+
+        # Get observations from robosuite
+        obs_dict = self.robosuite_env._get_observations()
+
+        # Get camera image (RGB, shape: (H, W, 3))
+        camera_key = f"{self.camera_name}_image"
+        if camera_key not in obs_dict:
+            raise KeyError(f"Camera observation '{camera_key}' not found in environment observations")
+
+        rgb_image = obs_dict[camera_key]
+
+        # Convert RGB to grayscale using standard luminosity weights
+        # Y = 0.299*R + 0.587*G + 0.114*B
+        grayscale = (0.299 * rgb_image[:, :, 0] +
+                    0.587 * rgb_image[:, :, 1] +
+                    0.114 * rgb_image[:, :, 2])
+
+        # Normalize to [0, 1]
+        grayscale = grayscale / 255.0
+
+        # Flatten and cast to dtype
+        grayscale_flat = grayscale.flatten().astype(self.cast_dtype)
+
+        return grayscale_flat
+
     def _expand_modality_mask_to_features(self, m_mod: np.ndarray) -> np.ndarray:
         """Convert modality mask (len M) -> feature-level mask (len flat_dim)."""
         m_feat = np.zeros(self._flat_dim, dtype=np.float32)
@@ -284,10 +364,29 @@ class BudgetAwareRobosuite(gym.Wrapper, CMDP):
             m_feat[s:e] = float(m_mod[i])
         return m_feat
 
-    def _apply_mask(self, flat: np.ndarray, feat_mask01: np.ndarray) -> np.ndarray:
-        """Gate observations by feature mask."""
+    def _apply_mask(self, flat: np.ndarray, feat_mask01: np.ndarray, m_mod01: np.ndarray) -> np.ndarray:
+        """Gating with optional rescaling.
+
+        Args:
+            flat: Flattened observation (feature-level)
+            feat_mask01: Feature-level binary mask (expanded from modality mask)
+            m_mod01: Modality-level binary mask
+
+        Returns:
+            Gated (and optionally rescaled) observation
+        """
         feat_mask01 = feat_mask01.astype(flat.dtype, copy=False)
-        return flat * feat_mask01
+        gated = flat * feat_mask01
+
+        if self.sensor_dropout_rescale:
+            # Count active modalities
+            n_active = np.sum(m_mod01 > 0.5)
+            if n_active > 0:
+                # Rescale to maintain consistent signal magnitude
+                rescale_factor = self._num_modalities / n_active
+                gated = gated * rescale_factor
+
+        return gated
 
     def _mask_cost(self, m_mod01: np.ndarray) -> float:
         """Calculate cost based on active modalities."""
@@ -303,6 +402,11 @@ class BudgetAwareRobosuite(gym.Wrapper, CMDP):
         flat, info = self.env.reset(**kwargs)
         flat = np.asarray(flat)
 
+        # Append camera observation if enabled
+        if self.use_camera:
+            camera_obs = self._get_camera_obs()
+            flat = np.concatenate([flat, camera_obs], axis=0)
+
         # Append mask (all ones at reset)
         mask0 = np.ones(self._num_modalities, dtype=flat.dtype)
         out = np.concatenate([flat, mask0], axis=0).astype(self.observation_space.dtype, copy=False)
@@ -317,6 +421,11 @@ class BudgetAwareRobosuite(gym.Wrapper, CMDP):
             inner = self._to_numpy(action)
             flat, r, term, trunc, info = self.env.step(inner)
             flat = np.asarray(flat)
+
+            # Append camera observation if enabled
+            if self.use_camera:
+                camera_obs = self._get_camera_obs()
+                flat = np.concatenate([flat, camera_obs], axis=0)
 
             m_mod01 = np.ones(self._num_modalities, dtype=flat.dtype)
             out = np.concatenate([flat, m_mod01.astype(flat.dtype)], axis=0).astype(self.observation_space.dtype)
@@ -351,9 +460,15 @@ class BudgetAwareRobosuite(gym.Wrapper, CMDP):
         flat, r, term, trunc, info = self.env.step(env_action)
         flat = np.asarray(flat)
 
-        # Build next observation and apply gating
-        feat_mask01 = self._expand_modality_mask_to_features(mod_mask.astype(np.float32))
-        gated = self._apply_mask(flat, feat_mask01)
+        # Append camera observation if enabled
+        if self.use_camera:
+            camera_obs = self._get_camera_obs()
+            flat = np.concatenate([flat, camera_obs], axis=0)
+
+        # Build next observation and apply gating (with optional rescaling)
+        mod_mask_float = mod_mask.astype(np.float32)
+        feat_mask01 = self._expand_modality_mask_to_features(mod_mask_float)
+        gated = self._apply_mask(flat, feat_mask01, mod_mask_float)
 
         # Cost
         step_cost = self._mask_cost(mod_mask.astype(np.float32))

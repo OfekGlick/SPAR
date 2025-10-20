@@ -7,8 +7,8 @@ import torch
 import gymnasium as gym
 from gymnasium import spaces
 from omnisafe.envs.core import make as omnisafe_make
-import budget_aware_highway
 
+from bafs_envs import budget_aware_highway
 custom_cfgs = {
     'train_cfgs': {
         'total_steps': 409_600,
@@ -31,15 +31,12 @@ custom_cfgs = {
         'actor_type': 'auto'  # Auto-detect based on action space
     },
     'logger_cfgs': {
-        'wandb_project': 'BAFS 2.0',
+        'wandb_project': 'BAFS 2.1 - Highway',
         'use_wandb': True,
     },
     'env_cfgs': {
         'use_all_obs': False,
-        'max_episode_steps': 250,
-        "action": {
-            "type": "DiscreteMetaAction"
-        },
+        # 'max_episode_steps': 250,
         'render_mode': 'rgb_array',
         'config': {
             "observation": {
@@ -48,11 +45,10 @@ custom_cfgs = {
                 "features": ["x", "y", "vx", "vy", "heading", "lane_id"],
                 "vehicles_count": 50,
             },
-            "policy_frequency": 5,
-            "simulation_frequency": 15,
-            "initial_spacing": 3,  # Increase spacing
-            # "lanes_count": 10,
-            # "steering_range": [-0.14, 0.14],
+            # Dense traffic configuration
+            # "vehicles_count": 100,  # Double the vehicles
+            "spawn_probability": 0.8,  # Higher spawn rate
+            "initial_spacing": 2,  # Closer initial spacing (meters)
         },
     },
 }
@@ -67,7 +63,7 @@ def adjust_config(custom_cfgs, args):
     Returns:
         None
     """
-    if args.algo in ['SACLag', 'SACPID', 'PPOLag', 'SPOLag', 'SACLag']:
+    if args.algo in ['SACLag', 'SACPID', 'PPOLag', 'SPOLag', 'SACLag', 'CPPOPID']:
         custom_cfgs['lagrange_cfgs'] = {
             'cost_limit': args.budget
         }
@@ -86,6 +82,13 @@ def adjust_config(custom_cfgs, args):
     custom_cfgs['env_cfgs']['seed'] = args.seed
     custom_cfgs['algo_cfgs']['sd_regulizer'] = args.sd_regulizer
     custom_cfgs['algo_cfgs']['no_zero_act'] = args.no_zero_act
+
+    # Random mask baseline: override actor type and ensure proper env config
+    if args.random_obs_selection:
+        custom_cfgs['model_cfgs']['actor_type'] = 'random_mask'
+        custom_cfgs['env_cfgs']['use_all_obs'] = False  # Must use BAFS env with masks
+        print("=== RANDOM MASK BASELINE MODE ===")
+        print("Actor will learn environment actions but use random modality selection")
     # try:
     #     custom_cfgs['env_cfgs']['feature_costs'] = [float(val) for val in args.feature_cost]
     # except:
@@ -171,13 +174,13 @@ def train_agent(eval_num_episodes=50):
 if __name__ == '__main__':
     args, unparsed_args = parse_arguments()
     adjust_config(custom_cfgs, args)
-    # custom_cfgs['env_cfgs']['max_episode_steps'] = 2
+    # custom_cfgs['env_cfgs']['max_episode_steps'] = 20
     # custom_cfgs['env_cfgs']['render_mode'] = 'rgb_array'
-    # custom_cfgs['train_cfgs']['total_steps'] = 8
-    # custom_cfgs['algo_cfgs']['steps_per_epoch'] = 2
+    # custom_cfgs['train_cfgs']['total_steps'] = 80
+    # custom_cfgs['algo_cfgs']['steps_per_epoch'] = 20
     # custom_cfgs['algo_cfgs']['sd_regulizer'] = True
     # custom_cfgs['env_cfgs']['use_all_obs'] = True
-    # args.eval_num_episodes = 5
+    # args.eval_num_episodes = 20
     assert custom_cfgs['env_cfgs']['max_episode_steps'] <= custom_cfgs['algo_cfgs']['steps_per_epoch'], \
         'Max episode steps should be less than or equal to steps per epoch - otherwise you wont get any episodic data'
     pprint(custom_cfgs)

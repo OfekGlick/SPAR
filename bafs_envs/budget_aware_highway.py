@@ -59,7 +59,7 @@ class BudgetAwareHighway(gym.Wrapper, CMDP):
             seed=42,
             *,
             use_all_obs: bool = False,
-            # sensor_dropout_rescale: bool = True,
+            sensor_dropout_rescale: bool = True,
             modality_costs: Dict[str, float] = None,
             cast_dtype: np.dtype = np.float32,
             max_episode_steps: int = None,
@@ -80,9 +80,11 @@ class BudgetAwareHighway(gym.Wrapper, CMDP):
             self._device = env_kwargs.pop('device')
         else:
             self._device = f'cuda:0' if torch.cuda.is_available() else 'cpu'
-        if max_episode_steps is not None:
-            env_kwargs["duration"] = max(env_kwargs.get("duration", max_episode_steps),
-                                         env_kwargs.get("duration", 0))
+        # if max_episode_steps is not None:
+        #     env_kwargs["duration"] = max(env_kwargs.get("duration", max_episode_steps),
+        #                                  env_kwargs.get("duration", 0))
+
+
         try:
             render_mode = env_kwargs.pop('render_mode')
         except KeyError:
@@ -92,11 +94,12 @@ class BudgetAwareHighway(gym.Wrapper, CMDP):
             config=env_kwargs,
             render_mode=render_mode,
         )
+        max_episode_steps = env.unwrapped.config.get("duration", 40)
         super().__init__(env)
 
         # ── user-config ────────────────────────────────────────────────────────────
         self.use_all_obs = bool(use_all_obs)
-        # self.sensor_dropout_rescale = bool(sensor_dropout_rescale)
+        self.sensor_dropout_rescale = bool(sensor_dropout_rescale)
         self.cast_dtype = cast_dtype
         self._num_envs = kwargs.pop('num_envs')
         # ── build multi‑observation (concat) ──────────────────────────────────────
@@ -163,7 +166,8 @@ class BudgetAwareHighway(gym.Wrapper, CMDP):
         else:
             env_action_space = self.env.action_space  # Can be Box or Discrete
             sensor_mask_space = gym.spaces.MultiBinary(self._num_modalities)
-
+            self.env_action_space = env_action_space  # Expose for tooling
+            self.sensor_mask_space = sensor_mask_space
             # Store references for actor building
             if self.is_continuous:
                 self.cont_act_space = env_action_space
@@ -225,10 +229,28 @@ class BudgetAwareHighway(gym.Wrapper, CMDP):
             m_feat[s:e] = float(m_mod[i])
         return m_feat
 
-    def _apply_mask(self, flat: np.ndarray, feat_mask01: np.ndarray) -> np.ndarray:
-        """Gating"""
+    def _apply_mask(self, flat: np.ndarray, feat_mask01: np.ndarray, m_mod01: np.ndarray) -> np.ndarray:
+        """Gating with optional rescaling.
+
+        Args:
+            flat: Flattened observation (feature-level)
+            feat_mask01: Feature-level binary mask (expanded from modality mask)
+            m_mod01: Modality-level binary mask
+
+        Returns:
+            Gated (and optionally rescaled) observation
+        """
         feat_mask01 = feat_mask01.astype(flat.dtype, copy=False)
         gated = flat * feat_mask01
+
+        if self.sensor_dropout_rescale:
+            # Count active modalities
+            n_active = np.sum(m_mod01 > 0.5)
+            if n_active > 0:
+                # Rescale to maintain consistent signal magnitude
+                rescale_factor = self._num_modalities / n_active
+                gated = gated * rescale_factor
+
         return gated
 
     def _mask_cost(self, m_mod01: np.ndarray) -> float:
@@ -290,10 +312,11 @@ class BudgetAwareHighway(gym.Wrapper, CMDP):
         # print(f"[DEBUG] After step - reward: {r}, term: {term}, trunc: {trunc}")
         # if term or trunc:
         #     print(f"[DEBUG] EPISODE ENDED! Info: {info}")
-        # Build next obs and apply gating
+        # Build next obs and apply gating (with optional rescaling)
         flat = self._concat_raw_obs()
-        feat_mask01 = self._expand_modality_mask_to_features(mod_mask.astype(np.float32))
-        gated = self._apply_mask(flat, feat_mask01)
+        mod_mask_float = mod_mask.astype(np.float32)
+        feat_mask01 = self._expand_modality_mask_to_features(mod_mask_float)
+        gated = self._apply_mask(flat, feat_mask01, mod_mask_float)
 
         # Cost
         step_cost = self._mask_cost(mod_mask.astype(np.float32))
