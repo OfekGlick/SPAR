@@ -101,7 +101,7 @@ defaults:
     # save model path
     window_lens: 100
     # path to save rliable json data
-    rliable_json_path: "./rliable_results"
+    rliable_json_path: "./rliable_results_new"
   # model configurations
   model_cfgs:
     # weight initialization mode

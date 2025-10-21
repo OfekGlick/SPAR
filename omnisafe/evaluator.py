@@ -392,6 +392,13 @@ class Evaluator:  # pylint: disable=too-many-instance-attributes
         if self._dict_cfgs.get('env_cfgs') is not None:
             env_kwargs.update(self._dict_cfgs['env_cfgs'])
 
+        # Force rendering capability for robosuite environments during evaluation
+        # This enables video recording without requiring it during training
+        env_id = self._cfgs['env_id']
+        if 'robosuite' in env_id.lower() or 'door' in env_id.lower() or 'lift' in env_id.lower():
+            env_kwargs['has_offscreen_renderer'] = True
+            env_kwargs['has_renderer'] = False
+
         self.__load_model_and_env(save_dir, model_name, env_kwargs)
 
     def evaluate(
@@ -399,7 +406,7 @@ class Evaluator:  # pylint: disable=too-many-instance-attributes
             num_episodes: int = 10,
             cost_criteria: float = 1.0,
             record_video: bool = False,
-            video_top_k: int = 10,
+            video_top_k: int = 3,
             video_metric: str = 'reward',
     ) -> tuple[list[float], list[float]]:
         """Evaluate the agent for num_episodes episodes.

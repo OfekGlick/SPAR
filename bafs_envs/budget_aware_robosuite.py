@@ -140,7 +140,12 @@ class BudgetAwareRobosuite(gym.Wrapper, CMDP):
         env_kwargs.setdefault('use_camera_obs', use_camera)
         env_kwargs.setdefault('use_object_obs', True)
         env_kwargs.setdefault('has_renderer', False)
-        env_kwargs.setdefault('has_offscreen_renderer', use_camera)  # Need offscreen for camera
+
+        # Only set has_offscreen_renderer default if not explicitly provided
+        # This allows evaluator to override for video recording during evaluation only
+        if 'has_offscreen_renderer' not in env_kwargs:
+            env_kwargs['has_offscreen_renderer'] = use_camera
+
         env_kwargs.setdefault('reward_shaping', True)
         env_kwargs.setdefault('control_freq', 20)
 
@@ -279,6 +284,13 @@ class BudgetAwareRobosuite(gym.Wrapper, CMDP):
             modality_costs = {n: 1.0 for n in self.obs_names}
         self._modality_costs = {n: float(modality_costs.get(n, 1.0)) for n in self.obs_names}
         self.costs = np.array([self._modality_costs[n] for n in self.obs_names], dtype=np.float32)
+
+        # Set metadata for gymnasium compatibility (robosuite's GymWrapper sets metadata=None)
+        # Use control_freq as render_fps since robosuite doesn't have separate rendering fps
+        self.metadata = {
+            'render_fps': int(robosuite_env.control_freq),
+            'render_modes': ['rgb_array'],
+        }
 
         self.set_seed(seed)
 
@@ -514,6 +526,44 @@ class BudgetAwareRobosuite(gym.Wrapper, CMDP):
                 torch.as_tensor(env_action, dtype=torch.float32).to(self._device),
                 torch.as_tensor(modality_mask, dtype=torch.float32).to(self._device),
             )
+
+    def render(self, mode='rgb_array', **kwargs):
+        """Override render to use sim.render() for offscreen rendering.
+
+        When has_offscreen_renderer=True but has_renderer=False (evaluation mode),
+        robosuite doesn't create a viewer, so env.render() fails. Instead, we use
+        sim.render() directly which uses MuJoCo's offscreen renderer.
+        """
+        # Check if using offscreen rendering without viewer
+        has_offscreen = getattr(self.robosuite_env, 'has_offscreen_renderer', False)
+        has_viewer = getattr(self.robosuite_env, 'has_renderer', False)
+
+        if has_offscreen and not has_viewer:
+            # Use sim.render() for offscreen rendering (evaluation video recording)
+            # Determine camera parameters
+            camera_name = kwargs.get('camera_name', 'frontview')
+            if hasattr(self.robosuite_env, 'camera_names') and self.robosuite_env.camera_names:
+                camera_name = self.robosuite_env.camera_names[0]
+
+            height = kwargs.get('height', 256)
+            if hasattr(self.robosuite_env, 'camera_heights') and self.robosuite_env.camera_heights:
+                height = self.robosuite_env.camera_heights[0]
+
+            width = kwargs.get('width', 256)
+            if hasattr(self.robosuite_env, 'camera_widths') and self.robosuite_env.camera_widths:
+                width = self.robosuite_env.camera_widths[0]
+
+            # Render using MuJoCo sim offscreen renderer
+            pixels = self.robosuite_env.sim.render(
+                width=width,
+                height=height,
+                camera_name=camera_name,
+            )
+            # sim.render returns image upside down, flip it
+            return pixels[::-1, :, :]
+        else:
+            # Use default viewer rendering (training mode or on-screen rendering)
+            return self.env.render()
 
     # Convenience properties
     @property

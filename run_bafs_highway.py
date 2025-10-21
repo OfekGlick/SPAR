@@ -31,23 +31,14 @@ custom_cfgs = {
         'actor_type': 'auto'  # Auto-detect based on action space
     },
     'logger_cfgs': {
-        'wandb_project': 'BAFS 2.1 - Highway',
+        'wandb_project': 'BAFS 2.2 - Highway',
         'use_wandb': True,
     },
     'env_cfgs': {
-        'use_all_obs': False,
-        # 'max_episode_steps': 250,
         'render_mode': 'rgb_array',
         'config': {
-            "observation": {
-                "type": "Kinematics",
-                "absolute": False,
-                "features": ["x", "y", "vx", "vy", "heading", "lane_id"],
-                "vehicles_count": 50,
-            },
             # Dense traffic configuration
             # "vehicles_count": 100,  # Double the vehicles
-            "spawn_probability": 0.8,  # Higher spawn rate
             "initial_spacing": 2,  # Closer initial spacing (meters)
         },
     },

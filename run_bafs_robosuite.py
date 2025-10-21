@@ -36,7 +36,7 @@ custom_cfgs = {
         }
     },
     'logger_cfgs': {
-        'wandb_project': 'BAFS 2.0 - Robosuite',
+        'wandb_project': 'BAFS 2.2 - Robosuite',
         'use_wandb': True,
     },
     'env_cfgs': {
