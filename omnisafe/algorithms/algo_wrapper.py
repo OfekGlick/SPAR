@@ -491,7 +491,7 @@ class AlgoWrapper:
             'use_cost', 'use_all_obs', 'sd_regulizer', 'random_obs_selection',
             'total_steps', 'num_eval_episodes', 'reward_mean', 'reward_std',
             'cost_mean', 'cost_std', 'episode_rewards', 'episode_costs',
-            'status', 'log_dir', 'cost_normalized', 'reward_normalized'
+            'status', 'log_dir', 'cost_normalized', 'reward_normalized', 'obs_modality_normalize'
         ]
 
         # Write to CSV with append mode

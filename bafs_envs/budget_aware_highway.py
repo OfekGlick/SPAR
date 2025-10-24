@@ -248,13 +248,13 @@ class BudgetAwareHighway(gym.Wrapper, CMDP):
         feat_mask01 = feat_mask01.astype(flat.dtype, copy=False)
         gated = flat * feat_mask01
 
-        if self.sensor_dropout_rescale:
-            # Count active modalities
-            n_active = np.sum(m_mod01 > 0.5)
-            if n_active > 0:
-                # Rescale to maintain consistent signal magnitude
-                rescale_factor = self._num_modalities / n_active
-                gated = gated * rescale_factor
+        # if self.sensor_dropout_rescale:
+        #     # Count active modalities
+        #     n_active = np.sum(m_mod01 > 0.5)
+        #     if n_active > 0:
+        #         # Rescale to maintain consistent signal magnitude
+        #         rescale_factor = self._num_modalities / n_active
+        #         gated = gated * rescale_factor
 
         return gated
 

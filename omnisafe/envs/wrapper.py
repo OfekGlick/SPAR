@@ -103,7 +103,6 @@ class TimeLimit(Wrapper):
         """
         obs, reward, cost, terminated, truncated, info = super().step(action)
 
-
         self._time += 1
         truncated = torch.tensor(
             self._time >= self._time_limit,
@@ -299,16 +298,16 @@ class ModalityObsNormalize(Wrapper):
     """
 
     def __init__(
-        self,
-        env: CMDP,
-        device: torch.device,
-        modality_to_span: dict[str, tuple[int, int]],
-        *,
-        mask_length: int = 0,
-        clip_value: float = 5.0,
-        update_stats: bool = True,
-        # If provided, should be a state_dict previously saved under 'obs_normalizer'
-        norm_per_mod_state = None,
+            self,
+            env: CMDP,
+            device: torch.device,
+            modality_to_span: dict[str, tuple[int, int]],
+            *,
+            mask_length: int = 0,
+            clip_value: float = 5.0,
+            update_stats: bool = True,
+            # If provided, should be a state_dict previously saved under 'obs_normalizer'
+            norm_per_mod_state=None,
     ) -> None:
         super().__init__(env=env, device=device)
         assert self.num_envs == 1, 'This normalizer supports single env only.'
@@ -368,7 +367,7 @@ class ModalityObsNormalize(Wrapper):
 
         if mask is None:
             mask = torch.ones((B, len(self.modalities)), dtype=torch.bool, device=features.device) if batched else \
-                   torch.ones((len(self.modalities),), dtype=torch.bool, device=features.device)
+                torch.ones((len(self.modalities),), dtype=torch.bool, device=features.device)
 
         feats = features if batched else features.unsqueeze(0)
         ms = mask if (batched or mask.ndim == 2) else mask.unsqueeze(0)
@@ -419,7 +418,7 @@ class ModalityObsNormalize(Wrapper):
             info['unmasked_observation'] = self._process_observation(
                 torch.as_tensor(info['unmasked_observation'], dtype=torch.float32, device=self._device)
             )
-       # Signal to the normalizers that we are in masked mode
+        # Signal to the normalizers that we are in masked mode
         for mod in self.modalities:
             self._per_mod_norm[mod].masked = True
 
@@ -848,13 +847,12 @@ class Unsqueeze(Wrapper):
         return obs, info
 
 
-
 class ModalityObsScale(Wrapper):
     """Scale active modality slices by M / max(1, sum(mask))."""
 
     def __init__(self, env: CMDP, device):
         super().__init__(env=env, device=device)
-        self.spans = dict(self.mapping)   # assumes env.mapping exists
+        self.spans = dict(self.mapping)  # assumes env.mapping exists
         self.names = list(self.spans.keys())
         self.M = len(self.names)
 

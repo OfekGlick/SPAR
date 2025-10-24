@@ -157,11 +157,7 @@ class OnlineAdapter:
             self._env = ObsNormalize(self._env, device=self._device)
             self._eval_env = ObsNormalize(self._eval_env, device=self._device)
         if obs_modality_normalize:
-            self._env = ModalityObsScale(
-                self._env,
-                device=self._device,
-            )
-
+            # First normalize each modality to bring them to the same scale
             self._env = ModalityObsNormalize(
                 self._env,
                 device=self._device,
@@ -170,15 +166,23 @@ class OnlineAdapter:
                 mask_length=len(self._env.obs_names),  # list of modality names, i.e ['kinematics', 'lidar']
             )
 
-            self._eval_env = ModalityObsScale(
-                self._eval_env,
+            # Then apply scaling based on active modality count
+            self._env = ModalityObsScale(
+                self._env,
                 device=self._device,
             )
+
+            # Same order for eval env
             self._eval_env = ModalityObsNormalize(
                 self._eval_env,
                 device=self._device,
                 modality_to_span=self._env.mapping,
                 mask_length=len(self._env.obs_names),
+            )
+
+            self._eval_env = ModalityObsScale(
+                self._eval_env,
+                device=self._device,
             )
         if reward_normalize:
             self._env = RewardNormalize(self._env, device=self._device)

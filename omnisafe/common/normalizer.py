@@ -92,7 +92,7 @@ class Normalizer(nn.Module):
         .. hint::
             - If the data is the first data, the data will be used to initialize the mean and std.
             - If the data is not the first data, the data will be normalized by the mean and std.
-            - Update the mean and std by the data.
+            - Update the mean and std by the data (only in training mode).
 
         Args:
             data (torch.Tensor): The raw data to be normalized.
@@ -103,7 +103,8 @@ class Normalizer(nn.Module):
         if not isinstance(data, torch.Tensor):
             data = torch.tensor(data)
         data = data.to(self._mean.device)
-        if not self.masked:
+        # Only update statistics if in training mode AND not masked
+        if self.training and not self.masked:
             self._push(data)
         if self._count <= 1:
             return data

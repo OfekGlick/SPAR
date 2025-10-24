@@ -41,7 +41,7 @@ from omnisafe.algorithms.model_based.planner import (
 )
 from omnisafe.common import Normalizer
 from omnisafe.envs.core import CMDP, make
-from omnisafe.envs.wrapper import ActionRepeat, ActionScale, ObsNormalize, TimeLimit, ModalityObsNormalize
+from omnisafe.envs.wrapper import ActionRepeat, ActionScale, ObsNormalize, TimeLimit, ModalityObsNormalize, ModalityObsScale
 from omnisafe.models.actor import ActorBuilder
 from omnisafe.models.actor_critic import ConstraintActorCritic, ConstraintActorQCritic
 from omnisafe.models.base import Actor
@@ -183,18 +183,20 @@ class Evaluator:  # pylint: disable=too-many-instance-attributes
         if self._cfgs['algo_cfgs']['obs_normalize']:
             obs_normalizer = Normalizer(shape=observation_space.shape, clip=5)
             obs_normalizer.load_state_dict(model_params['obs_normalizer'])
+            obs_normalizer.eval()  # Set to evaluation mode to prevent stats updates
             self._env = ObsNormalize(self._env, device=torch.device(device), norm=obs_normalizer)
 
         if self._cfgs['algo_cfgs']['obs_modality_normalize']:
             spans = self._env.obs_mapping  # {'Kinematics': (0,6), 'Lidar': (6,86), ...}
             mask_len = len(spans)
+
+            # First normalize each modality to bring them to the same scale
             per_mod_norm = nn.ModuleDict()
             for mod, (s, e) in spans.items():
                 seg_len = int(e - s)
                 per_mod_norm[mod] = Normalizer(shape=(seg_len,), clip=5)
             per_mod_norm.load_state_dict(model_params['obs_normalizer'])
 
-            # TODO: If I eventually plan to do the rescaling as a wrapper and outside the environment then adjust his part of the code
             self._env = ModalityObsNormalize(
                 self._env,
                 device=torch.device(device),
@@ -203,6 +205,13 @@ class Evaluator:  # pylint: disable=too-many-instance-attributes
                 norm_per_mod_state=per_mod_norm,
             )
             self._env.freeze_stats(True)
+
+            # Then apply scaling based on active modality count
+            self._env = ModalityObsScale(
+                self._env,
+                device=torch.device(device),
+            )
+
 
         if self._env.need_time_limit_wrapper:
             self._env = TimeLimit(self._env, device=torch.device(device), time_limit=max_episode_steps)

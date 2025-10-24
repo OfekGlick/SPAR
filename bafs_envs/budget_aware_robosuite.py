@@ -214,6 +214,9 @@ class BudgetAwareRobosuite(gym.Wrapper, CMDP):
                     if isinstance(val, np.ndarray):
                         existing_keys.append(key)
                         mod_size += val.size
+                    elif isinstance(val, int) or isinstance(val, float):
+                        existing_keys.append(key)
+                        mod_size += 1
 
             if mod_size > 0:
                 self._obs_keys_by_modality[mod_name] = existing_keys
@@ -395,13 +398,13 @@ class BudgetAwareRobosuite(gym.Wrapper, CMDP):
         feat_mask01 = feat_mask01.astype(flat.dtype, copy=False)
         gated = flat * feat_mask01
 
-        if self.sensor_dropout_rescale:
-            # Count active modalities
-            n_active = np.sum(m_mod01 > 0.5)
-            if n_active > 0:
-                # Rescale to maintain consistent signal magnitude
-                rescale_factor = self._num_modalities / n_active
-                gated = gated * rescale_factor
+        # if self.sensor_dropout_rescale:
+        #     # Count active modalities
+        #     n_active = np.sum(m_mod01 > 0.5)
+        #     if n_active > 0:
+        #         # Rescale to maintain consistent signal magnitude
+        #         rescale_factor = self._num_modalities / n_active
+        #         gated = gated * rescale_factor
 
         return gated
 
