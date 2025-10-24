@@ -41,9 +41,9 @@ defaults:
     # entropy coefficient
     entropy_coef: 0.0
     # normalize reward
-    reward_normalize: False
+    reward_normalize: True
     # normalize cost
-    cost_normalize: False
+    cost_normalize: True
     # normalize observation
     obs_normalize: False
     # normalize observation by modality

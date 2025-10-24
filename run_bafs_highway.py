@@ -19,19 +19,18 @@ custom_cfgs = {
     'algo_cfgs': {
         'steps_per_epoch': 8192,
         'update_iters': 40,
-        'batch_size': 512,
+        'batch_size': 1024,
         'gamma': 0.9,
         'zero_barrier_eps': 1.0e-8,  # numerical clamp inside log
         'zero_barrier_coef': 0.1,  # strength of the regularizer
         'kl_early_stop': False,
-        'target_kl': 0.5,
         # 'obs_modality_normalize': True,
     },
     'model_cfgs': {
         'actor_type': 'auto'  # Auto-detect based on action space
     },
     'logger_cfgs': {
-        'wandb_project': 'BAFS 2.2 - Highway',
+        'wandb_project': 'BAFS 2.3 - Highway',
         'use_wandb': True,
     },
     'env_cfgs': {
@@ -64,7 +63,6 @@ def adjust_config(custom_cfgs, args):
         custom_cfgs['algo_cfgs']['safety_budget'] = args.budget
         custom_cfgs['algo_cfgs']['saute_gamma'] = 0.99999  # How much to discount the future safety budget
         custom_cfgs['algo_cfgs']['unsafe_reward'] = -1
-        # custom_cfgs['train_cfgs']['device'] = 'cpu'
     custom_cfgs['train_cfgs']['total_steps'] = args.total_steps
     custom_cfgs['algo_cfgs']['use_cost'] = args.use_cost
     custom_cfgs['env_cfgs']['max_episode_steps'] = args.max_episode_steps
@@ -73,7 +71,7 @@ def adjust_config(custom_cfgs, args):
     custom_cfgs['env_cfgs']['seed'] = args.seed
     custom_cfgs['algo_cfgs']['sd_regulizer'] = args.sd_regulizer
     custom_cfgs['algo_cfgs']['no_zero_act'] = args.no_zero_act
-
+    custom_cfgs['algo_cfgs']['obs_modality_normalize'] = args.obs_modality_normalize
     # Random mask baseline: override actor type and ensure proper env config
     if args.random_obs_selection:
         custom_cfgs['model_cfgs']['actor_type'] = 'random_mask'

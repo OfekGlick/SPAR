@@ -10,7 +10,7 @@ from bafs_envs import budget_aware_robosuite
 
 custom_cfgs = {
     'train_cfgs': {
-        'total_steps': 409_600,  # 500 epochs × 500 steps (robosuite benchmark)
+        'total_steps': 250_000,  # 500 epochs × 500 steps (robosuite benchmark)
         'vector_env_nums': 1,
         'parallel': 1,
         'device': f'cuda:0' if torch.cuda.is_available() else 'cpu'
@@ -18,25 +18,26 @@ custom_cfgs = {
     'algo_cfgs': {
         'steps_per_epoch': 8192,  # Match robosuite horizon
         'update_iters': 40,
-        'batch_size': 2048,      # Typical for PPO with robosuite
+        'batch_size': 4096,      # Typical for PPO with robosuite
         'gamma': 0.99,
         'zero_barrier_eps': 1.0e-8,  # numerical clamp inside log
         'zero_barrier_coef': 0.1,    # strength of the regularizer
         'kl_early_stop': False,
-        'target_kl': 0.5,
         'obs_modality_normalize': False,  # Disable modality-specific normalization
     },
     'model_cfgs': {
         'actor_type': 'auto',  # Auto-detect based on action space
         'actor': {
-            'hidden_sizes': [256, 256, 256],  # Larger network for robosuite
+            'hidden_sizes': [256, 256],  # Larger network for robosuite
+            'lr': 1e-4,
         },
         'critic': {
-            'hidden_sizes': [256, 256, 256],  # Larger network for robosuite
+            'hidden_sizes': [256, 256],  # Larger network for robosuite
+            'lr': 3e-5,
         }
     },
     'logger_cfgs': {
-        'wandb_project': 'BAFS 2.2 - Robosuite',
+        'wandb_project': 'BAFS 2.3 - Robosuite',
         'use_wandb': True,
     },
     'env_cfgs': {
@@ -68,7 +69,7 @@ def adjust_config(custom_cfgs, args):
         None
     """
     # Lagrangian-based algorithms
-    if args.algo in ['SACLag', 'SACPID', 'PPOLag', 'SPOLag']:
+    if args.algo in ['SACLag', 'SACPID', 'PPOLag', 'SPOLag', 'CPPOPID']:
         custom_cfgs['lagrange_cfgs'] = {
             'cost_limit': args.budget
         }
@@ -92,7 +93,7 @@ def adjust_config(custom_cfgs, args):
     custom_cfgs['env_cfgs']['seed'] = args.seed
     custom_cfgs['algo_cfgs']['sd_regulizer'] = args.sd_regulizer
     custom_cfgs['algo_cfgs']['no_zero_act'] = args.no_zero_act
-
+    custom_cfgs['algo_cfgs']['obs_modality_normalize'] = args.obs_modality_normalize
     # Random mask baseline: override actor type and ensure proper env config
     if args.random_obs_selection:
         custom_cfgs['model_cfgs']['actor_type'] = 'random_mask'

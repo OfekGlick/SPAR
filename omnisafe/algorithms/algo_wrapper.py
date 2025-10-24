@@ -22,6 +22,7 @@ from typing import Any
 import wandb
 import torch
 from tqdm import trange
+from gymnasium import spaces
 from omnisafe.algorithms import ALGORITHM2TYPE, ALGORITHMS, registry
 from omnisafe.algorithms.base_algo import BaseAlgo
 from omnisafe.envs import support_envs
@@ -144,9 +145,17 @@ class AlgoWrapper:
             else:
                 budget_str = f'Budget{int(cfgs["lagrange_cfgs"]["cost_limit"])}'
 
-
-
-        exp_name = f'{self.algo}-{self.env_id.split("budget-aware-")[1]}{use_all_obs}{sd_reg_str}{zero_act_str}{random_mask_str}-{budget_str}'
+        cost_normalize = cfgs['algo_cfgs'].get('cost_normalize', False)
+        reward_normalize = cfgs['algo_cfgs'].get('reward_normalize', False)
+        if cost_normalize:
+            reward_norm_str = 'costNorm'
+        else:
+            reward_norm_str = ''
+        if reward_normalize:
+            reward_norm_str += '_rewardNorm'
+        else:
+            reward_norm_str += ''
+        exp_name = f'{self.algo}-{self.env_id.split("budget-aware-")[1]}{use_all_obs}{sd_reg_str}{zero_act_str}{random_mask_str}-{budget_str}-{reward_norm_str}-{cfgs["train_cfgs"]["total_steps"]}_steps'
         cfgs.recurisve_update({'exp_name': exp_name, 'env_id': self.env_id, 'algo': self.algo})
         cfgs.train_cfgs.recurisve_update(
             {'epochs': cfgs.train_cfgs.total_steps // cfgs.algo_cfgs.steps_per_epoch},
@@ -341,6 +350,65 @@ class AlgoWrapper:
             key=f'{self.algo}_(sensor_used_mean)_(sensor_used_std)',
             value=[average_sensor_used, std_sensor_used],
         )
+
+        # Log run details to manifest CSV
+        from datetime import datetime
+        import json
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+        # Extract budget from wherever the algorithm stores it
+        budget = None
+        if 'lagrange_cfgs' in self.custom_cfgs and 'cost_limit' in self.custom_cfgs['lagrange_cfgs']:
+            budget = self.custom_cfgs['lagrange_cfgs']['cost_limit']
+        elif 'algo_cfgs' in self.custom_cfgs and 'cost_limit' in self.custom_cfgs['algo_cfgs']:
+            budget = self.custom_cfgs['algo_cfgs']['cost_limit']
+        elif 'algo_cfgs' in self.custom_cfgs and 'safety_budget' in self.custom_cfgs['algo_cfgs']:
+            budget = self.custom_cfgs['algo_cfgs']['safety_budget']
+
+        # Get action space type and observation space shape from the agent's environment
+        action_space_type = 'unknown'
+        obs_space_shape = 'unknown'
+        try:
+            env = self.agent._env
+            action_space = env.action_space
+            if isinstance(action_space, spaces.Tuple):
+                action_space_type = f"Tuple({type(action_space[0]).__name__}, {type(action_space[1]).__name__})"
+            else:
+                action_space_type = type(action_space).__name__
+            obs_space_shape = str(env.observation_space.shape)
+        except:
+            action_space_type = 'unknown'
+            obs_space_shape = 'unknown'
+
+        self._log_to_manifest({
+            'timestamp': timestamp,
+            'algo': self.algo,
+            'env': self.env_id,
+            'seed': self.custom_cfgs['env_cfgs'].get('seed', 'unknown'),
+            'budget': budget if budget is not None else 'None',
+            'obs_mode': obs_mode,
+            'actor_type': self.custom_cfgs['model_cfgs'].get('actor_type', 'unknown'),
+            'action_space_type': action_space_type,
+            'obs_space_shape': obs_space_shape,
+            'use_cost': self.custom_cfgs['algo_cfgs'].get('use_cost', 'unknown'),
+            'use_all_obs': self.custom_cfgs['env_cfgs'].get('use_all_obs', 'unknown'),
+            'sd_regulizer': self.custom_cfgs['algo_cfgs'].get('sd_regulizer', 'unknown'),
+            'random_obs_selection': self.custom_cfgs['model_cfgs'].get('actor_type') == 'random_mask',
+            'total_steps': steps_str,
+            'num_eval_episodes': num_episodes,
+            'reward_mean': float(np.mean(average_episode_rewards)),
+            'reward_std': float(np.std(average_episode_rewards)),
+            'cost_mean': float(np.mean(average_episode_costs)),
+            'cost_std': float(np.std(average_episode_costs)),
+            'episode_rewards': json.dumps([float(r) for r in average_episode_rewards]),
+            'episode_costs': json.dumps([float(c) for c in average_episode_costs]),
+            'status': 'success',
+            'log_dir': self.agent.logger.log_dir,
+            'cost_normalized': self.cfgs['algo_cfgs'].get('cost_normalize', 'unknown'),
+            'reward_normalized': self.cfgs['algo_cfgs'].get('reward_normalize', 'unknown'),
+            'obs_modality_normalize': self.cfgs['algo_cfgs'].get('obs_modality_normalize', 'unknown'),
+        })
+
         self.render(num_episodes=10, render_mode="rgb_array", width=256, height=256)
         sensor_costs = results['sensor_costs']
         if not self.custom_cfgs['env_cfgs']['use_all_obs']:
@@ -395,6 +463,46 @@ class AlgoWrapper:
         with open(tmp, "w", encoding="utf-8") as f:
             json.dump(data, f, indent=2, sort_keys=True)
         os.replace(tmp, path)
+
+        # Log what was saved
+        from datetime import datetime
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        print(f"[{timestamp}] Saved to results.json: bucket='{bucket}', key='{key}', value={value}")
+        print(f"[{timestamp}] File location: {path}")
+
+    def _log_to_manifest(self, metadata: dict) -> None:
+        """Append run details to CSV manifest for tracking and diagnosis."""
+        import csv
+        from datetime import datetime
+
+        manifest_path = os.path.join(
+            self.cfgs.logger_cfgs.rliable_json_path,
+            "run_manifest.csv"
+        )
+        os.makedirs(os.path.dirname(manifest_path), exist_ok=True)
+
+        # Check if file exists to determine if we need headers
+        file_exists = os.path.exists(manifest_path)
+
+        # Define column order
+        fieldnames = [
+            'timestamp', 'algo', 'env', 'seed', 'budget', 'obs_mode', 'actor_type',
+            'action_space_type', 'obs_space_shape',
+            'use_cost', 'use_all_obs', 'sd_regulizer', 'random_obs_selection',
+            'total_steps', 'num_eval_episodes', 'reward_mean', 'reward_std',
+            'cost_mean', 'cost_std', 'episode_rewards', 'episode_costs',
+            'status', 'log_dir', 'cost_normalized', 'reward_normalized'
+        ]
+
+        # Write to CSV with append mode
+        with open(manifest_path, 'a', newline='', encoding='utf-8') as f:
+            writer = csv.DictWriter(f, fieldnames=fieldnames)
+            if not file_exists:
+                writer.writeheader()
+            writer.writerow(metadata)
+
+        timestamp = metadata.get('timestamp', datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+        print(f"[{timestamp}] Logged run to manifest: {manifest_path}")
 
     # pylint: disable-next=too-many-arguments
     def render(

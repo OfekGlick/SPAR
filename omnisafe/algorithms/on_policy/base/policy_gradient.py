@@ -231,6 +231,13 @@ class PolicyGradient(BaseAlgo):
             else:
                 self._logger.register_key('Train/DiscreteEntropy')
             self._logger.register_key('Train/MaskEntropy')
+        elif self._cfgs.model_cfgs.actor_type == 'random_mask':
+            # Random mask actor: matches multihead pattern but with random mask selection
+            if isinstance(self._env.action_space[0], gymnasium.spaces.Box):
+                self._logger.register_key('Train/ContinuousEntropy')
+            else:
+                self._logger.register_key('Train/DiscreteEntropy')
+            self._logger.register_key('Train/MaskEntropy')  # Will be constant (random), but logged for consistency
 
         self._logger.register_key('Train/KL')
         self._logger.register_key('Train/StopIter')
@@ -239,7 +246,7 @@ class PolicyGradient(BaseAlgo):
         if self._cfgs.model_cfgs.actor_type == 'gaussian_learning':
             if isinstance(self._env.action_space, gymnasium.spaces.Box):
                 self._logger.register_key('Train/PolicyStd')
-        elif self._cfgs.model_cfgs.actor_type == 'multihead':
+        elif self._cfgs.model_cfgs.actor_type in ['multihead', 'random_mask']:
             if isinstance(self._env.action_space[0], gymnasium.spaces.Box):
                 self._logger.register_key('Train/PolicyStd')
 

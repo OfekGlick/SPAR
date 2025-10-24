@@ -82,6 +82,7 @@ class ActorBuilder:
             NotImplementedError: If the actor type is not implemented.
         """
         if actor_type == 'gaussian_learning':
+            print("using GaussianLearningActor for continuous action space.")
             return GaussianLearningActor(
                 self._obs_space,
                 self._act_space,
@@ -122,6 +123,7 @@ class ActorBuilder:
                 weight_initialization_mode=self._weight_initialization_mode,
             )
         if actor_type == 'categorical_learning':
+            print("using CategoricalLearningActor for discrete action space.")
             return CategoricalLearningActor(
                 self._obs_space,
                 self._act_space,
@@ -140,6 +142,7 @@ class ActorBuilder:
             # Check if first element of Tuple is Box (continuous) or Discrete
             if isinstance(self._act_space[0], spaces.Box):
                 # Continuous environment action + sensor mask
+                print("Using MultiHeadActor for continuous environment actions.")
                 return MultiHeadActor(
                     obs_space=self._obs_space,
                     cont_act_space=self._act_space[0],
@@ -151,6 +154,7 @@ class ActorBuilder:
                 )
             else:
                 # Discrete environment action + sensor mask
+                print("Using MultiHeadDiscreteActor for discrete environment actions.")
                 return MultiHeadDiscreteActor(
                     obs_space=self._obs_space,
                     disc_env_act_space=self._act_space[0],
@@ -171,6 +175,7 @@ class ActorBuilder:
             # Check if first element of Tuple is Box (continuous) or Discrete
             if isinstance(self._act_space[0], spaces.Box):
                 # Continuous environment action + random mask
+                print("using RandomMaskActorContinuous for continuous environment actions.")
                 return RandomMaskActorContinuous(
                     obs_space=self._obs_space,
                     cont_act_space=self._act_space[0],
@@ -182,6 +187,7 @@ class ActorBuilder:
                 )
             else:
                 # Discrete environment action + random mask
+                print("Using RandomMaskActorDiscrete for discrete environment actions.")
                 return RandomMaskActorDiscrete(
                     obs_space=self._obs_space,
                     disc_act_space=self._act_space[0],

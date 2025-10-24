@@ -74,6 +74,12 @@ def parse_arguments():
         action='store_true',
         help='whether to use the zero-action regularizer or not',
     )
+    parser.add_argument(
+        '--obs-modality-normalize',
+        action='store_true',
+        help='whether to use the zero-action regularizer or not',
+    )
+
     # parser.add_argument(
     #     '--feature-cost',
     #     type=float,

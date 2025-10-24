@@ -200,6 +200,11 @@ class BudgetAwareHighway(gym.Wrapper, CMDP):
     def max_episode_steps(self, value):
         self._max_episode_steps = value
 
+    @property
+    def num_modalities(self) -> int:
+        """Number of observation modalities."""
+        return self._num_modalities
+
     def set_seed(self, seed) -> None:
         random.seed(self.seed)
         np.random.seed(self.seed)

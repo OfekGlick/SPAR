@@ -317,6 +317,11 @@ class BudgetAwareRobosuite(gym.Wrapper, CMDP):
         return {k: v for k, v in groups.items() if v}
 
     @property
+    def num_modalities(self) -> int:
+        """Number of observation modalities."""
+        return self._num_modalities
+
+    @property
     def max_episode_steps(self) -> int:
         return self._max_episode_steps
 

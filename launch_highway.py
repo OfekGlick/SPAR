@@ -129,8 +129,8 @@ def main():
         "budget-aware-parking-v0",
         # "budget-aware-intersection-v1",
     ])
-    p.add_argument("--safe-algos", nargs="+", default=SAFE_ALGOS)
-    p.add_argument("--unsafe-algos", nargs="+", default=UNSAFE_ALGOS)
+    p.add_argument("--safe-algos", nargs="*", default=SAFE_ALGOS)
+    p.add_argument("--unsafe-algos", nargs="*", default=UNSAFE_ALGOS)
     p.add_argument("--budget-ratios", nargs="+", type=float, default=[0.5, 0.8])
     p.add_argument("--cost-usage", nargs="+", type=int, default=[1, 0], help="0/1 for use_cost")
     p.add_argument("--all-obs-usage", nargs="+", type=int, default=[1, 0], help="0/1 for use_all_obs")
@@ -138,9 +138,10 @@ def main():
     p.add_argument("--sd-regulizer", nargs="+", type=int, default=[1, 0], help="0/1 for use_all_obs")
     p.add_argument("--no-zero-act", nargs="+", type=int, default=[0], help="0/1 for use_all_obs")
     p.add_argument("--seeds", nargs="+", type=int, default=[
-        31, 32, 33, 34, 35, 36, 37, 38,
-        41, 42, 43, 44, 45, 46, 47, 48,
+        # 31, 32, 33, 34, 35, 36, 37, 38,
+        # 41, 42, 43, 44, 45, 46, 47, 48,
         51, 52, 53, 54, 55, 56, 57, 58,
+        61, 62, 63, 64, 65, 66, 67, 68
     ])
     p.add_argument("--total-steps", type=int, default=102_400)
     p.add_argument("--eval-num-episodes", type=int, default=250)
