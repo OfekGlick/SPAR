@@ -23,14 +23,14 @@ custom_cfgs = {
         'gamma': 0.9,
         'zero_barrier_eps': 1.0e-8,  # numerical clamp inside log
         'zero_barrier_coef': 0.1,  # strength of the regularizer
-        'kl_early_stop': False,
+        'kl_early_stop': True,
         # 'obs_modality_normalize': True,
     },
     'model_cfgs': {
         'actor_type': 'auto'  # Auto-detect based on action space
     },
     'logger_cfgs': {
-        'wandb_project': 'BAFS 2.3 - Highway',
+        'wandb_project': 'BAFS 2.5 - Highway',
         'use_wandb': True,
     },
     'env_cfgs': {

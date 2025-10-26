@@ -138,10 +138,7 @@ def main():
     p.add_argument("--sd-regulizer", nargs="+", type=int, default=[1, 0], help="0/1 for use_all_obs")
     p.add_argument("--no-zero-act", nargs="+", type=int, default=[0], help="0/1 for use_all_obs")
     p.add_argument("--seeds", nargs="+", type=int, default=[
-        # 31, 32, 33, 34, 35, 36, 37, 38,
-        # 41, 42, 43, 44, 45, 46, 47, 48,
-        51, 52, 53, 54, 55, 56, 57, 58,
-        61, 62, 63, 64, 65, 66, 67, 68
+        i for i in range(0, 8)
     ])
     p.add_argument("--total-steps", type=int, default=102_400)
     p.add_argument("--eval-num-episodes", type=int, default=250)
@@ -188,6 +185,7 @@ def main():
                                     sd_regulizer=bool(sd_reg),
                                     no_zero_act=bool(no_zero_act),
                                     random_obs_selection=bool(random_obs_selection),
+                                    obs_modality_normalize=True,
                                 )
                                 python_cmd = build_python_command(args.run_py, py_args)
                                 env_short = env_id.replace("budget-aware-", "")
@@ -230,6 +228,7 @@ def main():
                                             sd_regulizer=bool(sd_reg),
                                             no_zero_act=bool(no_zero_act),
                                             random_obs_selection=bool(random_obs_selection),
+                                            obs_modality_normalize=True,
                                         )
                                         python_cmd = build_python_command(args.run_py, py_args)
                                         fname = f"{algo}_{env_id}_cost{int(use_cost)}_all{int(use_all_obs)}_B{int(budget)}_S{seed}_sd{int(sd_reg)}_nozero{int(no_zero_act)}_random{int(random_obs_selection)}"

@@ -109,6 +109,12 @@ class OnPolicyBuffer(BaseBuffer):  # pylint: disable=too-many-instance-attribute
         self.data['target_value_c'] = torch.zeros((size,), dtype=torch.float32, device=device)
         self.data['logp'] = torch.zeros((size,), dtype=torch.float32, device=device)
 
+        # Multi-head support: separate log probs for env and mask heads
+        # These are initialized lazily in store() if needed
+        self.data['logp_env'] = None
+        self.data['logp_mask'] = None
+        self._is_multihead = False
+
         self._gamma: float = gamma
         self._lam: float = lam
         self._lam_c: float = lam_c
@@ -134,6 +140,8 @@ class OnPolicyBuffer(BaseBuffer):  # pylint: disable=too-many-instance-attribute
     def store(self, **data: torch.Tensor) -> None:
         """Store data into the buffer.
 
+        Supports both single-head actors (logp) and multi-head actors (logp_env, logp_mask).
+
         .. warning::
             The total size of the data must be less than the buffer size.
 
@@ -141,8 +149,22 @@ class OnPolicyBuffer(BaseBuffer):  # pylint: disable=too-many-instance-attribute
             data (torch.Tensor): The data to store.
         """
         assert self.ptr < self.max_size, 'No more space in the buffer!'
+
+        # Detect multi-head on first store
+        if 'logp_env' in data and 'logp_mask' in data:
+            if not self._is_multihead:
+                # Initialize multi-head buffers
+                self._is_multihead = True
+                self.data['logp_env'] = torch.zeros((self.max_size,), dtype=torch.float32, device=self._device)
+                self.data['logp_mask'] = torch.zeros((self.max_size,), dtype=torch.float32, device=self._device)
+
+        # Store data
         for key, value in data.items():
-            self.data[key][self.ptr] = value
+            if key in self.data:
+                # For None values (uninitialized multi-head buffers), skip
+                if self.data[key] is not None:
+                    self.data[key][self.ptr] = value
+
         self.ptr += 1
 
     def finish_path(
@@ -223,11 +245,17 @@ class OnPolicyBuffer(BaseBuffer):  # pylint: disable=too-many-instance-attribute
             'unmasked_observation': self.data['unmasked_observation'],
             'target_value_r': self.data['target_value_r'],
             'adv_r': self.data['adv_r'],
-            'logp': self.data['logp'],
             'discounted_ret': self.data['discounted_ret'],
             'adv_c': self.data['adv_c'],
             'target_value_c': self.data['target_value_c'],
         }
+
+        # Return logp in appropriate format (tuple for multi-head, tensor for single-head)
+        if self._is_multihead:
+            # Return as tuple for dynamic type checking in loss functions
+            data['logp'] = (self.data['logp_env'], self.data['logp_mask'])
+        else:
+            data['logp'] = self.data['logp']
 
         adv_mean, adv_std, *_ = distributed.dist_statistics_scalar(data['adv_r'])
         cadv_mean, *_ = distributed.dist_statistics_scalar(data['adv_c'])

@@ -19,17 +19,16 @@ custom_cfgs = {
         'steps_per_epoch': 8192,  # Match robosuite horizon
         'update_iters': 40,
         'batch_size': 4096,      # Typical for PPO with robosuite
-        'gamma': 0.99,
+        'gamma': 0.95,
         'zero_barrier_eps': 1.0e-8,  # numerical clamp inside log
         'zero_barrier_coef': 0.1,    # strength of the regularizer
-        'kl_early_stop': False,
-        'obs_modality_normalize': False,  # Disable modality-specific normalization
+        'kl_early_stop': True,
     },
     'model_cfgs': {
         'actor_type': 'auto',  # Auto-detect based on action space
         'actor': {
             'hidden_sizes': [256, 256],  # Larger network for robosuite
-            'lr': 1e-4,
+            'lr': 1e-5,
         },
         'critic': {
             'hidden_sizes': [256, 256],  # Larger network for robosuite
@@ -37,7 +36,7 @@ custom_cfgs = {
         }
     },
     'logger_cfgs': {
-        'wandb_project': 'BAFS 2.3 - Robosuite',
+        'wandb_project': 'BAFS 2.5 - Robosuite',
         'use_wandb': True,
     },
     'env_cfgs': {

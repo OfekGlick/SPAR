@@ -48,7 +48,9 @@ class MultiHeadDiscreteActor(Actor):
             activation='relu',
             weight_initialization_mode='kaiming_uniform',
     ):
-        """Initialize the MultiHeadDiscreteActor with shared layers."""
+        """Initialize the MultiHeadDiscreteActor with shared layers.
+
+        """
         # Pass disc_env_act_space as act_space to base class
         super().__init__(obs_space, disc_env_act_space, hidden_sizes, activation, weight_initialization_mode)
 
@@ -151,11 +153,13 @@ class MultiHeadDiscreteActor(Actor):
     def log_prob(self, act):
         """Calculate log probability of the given actions.
 
+        Returns separate log probabilities for decoupled PPO with independent trust regions.
+
         Args:
             act: Tuple of (env_action, sensor_mask) or combined tensor.
 
         Returns:
-            Log probability of the actions.
+            tuple: (env_log_prob, mask_log_prob) for decoupled ratio computation.
         """
         assert self._current_env_dist is not None and self._current_mask_dist is not None, \
             "Distributions not found. Call forward() or predict() before log_prob()."
@@ -173,7 +177,8 @@ class MultiHeadDiscreteActor(Actor):
         env_log_prob = self._current_env_dist.log_prob(env_action)
         mask_log_prob = self._current_mask_dist.log_prob(sensor_mask).sum(dim=-1)
 
-        return env_log_prob + mask_log_prob
+        # Return as tuple for decoupled PPO (each head gets independent clipping)
+        return (env_log_prob, mask_log_prob)
 
     @property
     def temperature(self) -> float:

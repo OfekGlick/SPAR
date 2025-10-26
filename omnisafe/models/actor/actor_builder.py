@@ -139,29 +139,37 @@ class ActorBuilder:
                     f"Multihead actor requires Tuple action space, got {type(self._act_space)}"
                 )
 
+            # Use all hidden_sizes for shared network, empty head_hidden_sizes for direct projection
+            # This matches the architecture of GaussianLearningActor/CategoricalLearningActor
+            # Example: hidden_sizes=[64, 64]
+            #   GaussianActor: obs → 64 → 64 → action
+            #   MultiHeadActor: obs → 64 → 64 (shared) → cont_action & disc_action
+            shared_hidden_sizes = self._hidden_sizes
+            head_hidden_sizes = []  # Direct projection from shared features to outputs
+
             # Check if first element of Tuple is Box (continuous) or Discrete
             if isinstance(self._act_space[0], spaces.Box):
                 # Continuous environment action + sensor mask
-                print("Using MultiHeadActor for continuous environment actions.")
+                print(f"Using MultiHeadActor with shared={shared_hidden_sizes}, direct projection heads")
                 return MultiHeadActor(
                     obs_space=self._obs_space,
                     cont_act_space=self._act_space[0],
                     disc_act_space=self._act_space[1],
-                    hidden_sizes=self._hidden_sizes,
+                    hidden_sizes=head_hidden_sizes,
                     activation=self._activation,
-                    shared_hidden_sizes=[256, 256],
+                    shared_hidden_sizes=shared_hidden_sizes,
                     weight_initialization_mode=self._weight_initialization_mode,
                 )
             else:
                 # Discrete environment action + sensor mask
-                print("Using MultiHeadDiscreteActor for discrete environment actions.")
+                print(f"Using MultiHeadDiscreteActor with shared={shared_hidden_sizes}, direct projection heads")
                 return MultiHeadDiscreteActor(
                     obs_space=self._obs_space,
                     disc_env_act_space=self._act_space[0],
                     disc_mask_space=self._act_space[1],
-                    hidden_sizes=self._hidden_sizes,
+                    hidden_sizes=head_hidden_sizes,
                     activation=self._activation,
-                    shared_hidden_sizes=[256, 256],
+                    shared_hidden_sizes=shared_hidden_sizes,
                     weight_initialization_mode=self._weight_initialization_mode,
                 )
         if actor_type == 'random_mask':
@@ -172,29 +180,33 @@ class ActorBuilder:
                     f"Random mask actor requires Tuple action space, got {type(self._act_space)}"
                 )
 
+            # Use same architecture as multihead: all layers shared, direct projection heads
+            shared_hidden_sizes = self._hidden_sizes
+            head_hidden_sizes = []  # Direct projection from shared features to outputs
+
             # Check if first element of Tuple is Box (continuous) or Discrete
             if isinstance(self._act_space[0], spaces.Box):
                 # Continuous environment action + random mask
-                print("using RandomMaskActorContinuous for continuous environment actions.")
+                print(f"Using RandomMaskActorContinuous with shared={shared_hidden_sizes}, direct projection head")
                 return RandomMaskActorContinuous(
                     obs_space=self._obs_space,
                     cont_act_space=self._act_space[0],
                     disc_act_space=self._act_space[1],
-                    hidden_sizes=self._hidden_sizes,
+                    hidden_sizes=head_hidden_sizes,
                     activation=self._activation,
-                    shared_hidden_sizes=[256, 256],
+                    shared_hidden_sizes=shared_hidden_sizes,
                     weight_initialization_mode=self._weight_initialization_mode,
                 )
             else:
                 # Discrete environment action + random mask
-                print("Using RandomMaskActorDiscrete for discrete environment actions.")
+                print(f"Using RandomMaskActorDiscrete with shared={shared_hidden_sizes}, direct projection head")
                 return RandomMaskActorDiscrete(
                     obs_space=self._obs_space,
                     disc_act_space=self._act_space[0],
                     disc_mask_space=self._act_space[1],
-                    hidden_sizes=self._hidden_sizes,
+                    hidden_sizes=head_hidden_sizes,
                     activation=self._activation,
-                    shared_hidden_sizes=[256, 256],
+                    shared_hidden_sizes=shared_hidden_sizes,
                     weight_initialization_mode=self._weight_initialization_mode,
                 )
         raise NotImplementedError(

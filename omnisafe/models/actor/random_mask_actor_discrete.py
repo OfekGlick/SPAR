@@ -82,14 +82,16 @@ class RandomMaskActorDiscrete(Actor):
         self._current_mask_dist = None
 
     def _distribution(self, obs):
-        """Generate distributions for discrete actions and random masks.
+        """Generate distribution for discrete environment actions only.
+
+        Random masks are not part of the learned distribution - they're generated
+        only during predict() for rollout purposes.
 
         Args:
             obs: Observation tensor (can be batched [B, obs_dim] or unbatched [obs_dim])
 
         Returns:
             action_dist: Learned Categorical distribution over environment actions
-            mask_dist: Random Bernoulli(0.5) distribution over modality masks
         """
         shared_features = self.shared_net(obs)
 
@@ -97,29 +99,21 @@ class RandomMaskActorDiscrete(Actor):
         logits = self.discrete_net(shared_features) / self._temperature
         action_dist = Categorical(logits=logits)
 
-        # Random mask distribution (NOT LEARNED)
-        # Bernoulli with p=0.5 for each modality (uses logits=0)
-        # Create random logits matching the batch dimension of shared_features
-        # If batched: [B, hidden] -> [B, num_modalities]
-        # If unbatched: [hidden] -> [num_modalities]
-        random_logits = torch.zeros(*shared_features.shape[:-1], self.num_modalities, device=obs.device)
-        mask_dist = Bernoulli(logits=random_logits)
-
-        return action_dist, mask_dist
+        return action_dist
 
     def forward(self, obs):
-        """Generate and cache action distributions.
+        """Generate and cache action distribution.
 
         Args:
             obs: Observation tensor
 
         Returns:
-            action_dist: Distribution over environment actions
-            mask_dist: Distribution over modality masks (random)
+            tuple: (action_dist, None) - consistent with multi-head actors but mask is None
         """
-        self._current_action_dist, self._current_mask_dist = self._distribution(obs)
+        self._current_action_dist = self._distribution(obs)
+        self._current_mask_dist = None  # Not used for training
         self._after_inference = True
-        return self._current_action_dist, self._current_mask_dist
+        return (self._current_action_dist, None)  # Return tuple for consistency, mask is None
 
     def predict(self, obs, deterministic=False):
         """Predict environment actions and random masks.
@@ -132,7 +126,7 @@ class RandomMaskActorDiscrete(Actor):
             disc_action: Sampled/argmax environment action
             binary_mask: Random binary mask (pure Bernoulli with p=0.5)
         """
-        self._current_action_dist, self._current_mask_dist = self._distribution(obs)
+        self._current_action_dist = self._distribution(obs)
 
         # Predict discrete action (LEARNED)
         if deterministic:
@@ -140,27 +134,29 @@ class RandomMaskActorDiscrete(Actor):
         else:
             disc_action = self._current_action_dist.sample()
 
-        # Sample random mask (NOT LEARNED - always random, even if deterministic=True)
-        # This is intentional: mask is never learned, so there's no "deterministic" mode
-        binary_mask = self._current_mask_dist.sample()
+        # Generate random mask directly (NOT LEARNED - no distribution stored)
+        # Always random, even if deterministic=True
+        batch_shape = disc_action.shape
+        binary_mask = torch.bernoulli(
+            torch.full((*batch_shape, self.num_modalities), 0.5, device=obs.device)
+        )
 
         self._after_inference = True
         return disc_action, binary_mask
 
     def log_prob(self, act):
-        """Calculate log probability of actions.
+        """Calculate log probability of environment actions only.
 
-        For the environment action, we compute the actual log probability.
-        For the mask, we return zero since it doesn't contribute to training.
+        Mask doesn't contribute to training (it's random, not learned).
 
         Args:
-            act: Action tuple (discrete_action, discrete_mask)
+            act: Action tuple (discrete_action, discrete_mask) or concatenated tensor
 
         Returns:
-            torch.Tensor: Total log probability (only env action contributes)
+            torch.Tensor: Log probability of environment action only (scalar)
         """
-        assert self._current_action_dist is not None and self._current_mask_dist is not None, \
-            "Distributions not found. Call forward() or predict() before log_prob()."
+        assert self._current_action_dist is not None, \
+            "Distribution not found. Call forward() or predict() before log_prob()."
 
         # Split the action into discrete action and mask components
         if isinstance(act, tuple):
@@ -169,11 +165,10 @@ class RandomMaskActorDiscrete(Actor):
             # If concatenated, first element is the discrete action, rest is mask
             disc_action = act[:, 0].long()
 
-        # Compute log probabilities
-        # Environment action: actual log prob (LEARNED - affects gradient)
+        # Compute log probability - only environment action contributes
         action_log_prob = self._current_action_dist.log_prob(disc_action)
 
-        return action_log_prob
+        return action_log_prob  # Scalar, not tuple
 
     @property
     def temperature(self):

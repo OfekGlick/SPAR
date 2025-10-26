@@ -18,7 +18,9 @@ class MultiHeadActor(Actor):
             activation='relu',
             weight_initialization_mode='kaiming_uniform',
     ):
-        """Initialize the MultiHeadActor with shared layers."""
+        """
+        Initialize the MultiHeadActor with shared layers.
+        """
         super().__init__(obs_space, cont_act_space, hidden_sizes, activation, weight_initialization_mode)
 
         # Shared layers
@@ -90,11 +92,13 @@ class MultiHeadActor(Actor):
     def log_prob(self, act):
         """Calculate log probability of the given actions based on cached distributions.
 
+        Returns separate log probabilities for decoupled PPO with independent trust regions.
+
         Args:
             act (torch.Tensor): Combined action tensor, where continuous actions are followed by discrete.
 
         Returns:
-            torch.Tensor: Log probability of the actions.
+            tuple: (env_log_prob, mask_log_prob) for decoupled ratio computation.
         """
         assert self._current_cont_dist is not None and self._current_disc_dist is not None, \
             "Distributions not found. Call forward() or predict() before log_prob()."
@@ -111,7 +115,8 @@ class MultiHeadActor(Actor):
         cont_log_prob = self._current_cont_dist.log_prob(cont_action).sum(dim=-1)
         disc_log_prob = self._current_disc_dist.log_prob(disc_action).sum(dim=-1)
 
-        return cont_log_prob + disc_log_prob
+        # Return as tuple for decoupled PPO (each head gets independent clipping)
+        return (cont_log_prob, disc_log_prob)
 
     @property
     def std(self) -> float:

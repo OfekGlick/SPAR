@@ -155,7 +155,8 @@ class AlgoWrapper:
             reward_norm_str += '_rewardNorm'
         else:
             reward_norm_str += ''
-        exp_name = f'{self.algo}-{self.env_id.split("budget-aware-")[1]}{use_all_obs}{sd_reg_str}{zero_act_str}{random_mask_str}-{budget_str}-{reward_norm_str}-{cfgs["train_cfgs"]["total_steps"]}_steps'
+        obs_modality_norm = "ObsModNorm" if cfgs['algo_cfgs'].get('obs_modality_normalize', False) else ''
+        exp_name = f'{self.algo}-{self.env_id.split("budget-aware-")[1]}{use_all_obs}{sd_reg_str}{zero_act_str}{random_mask_str}-{budget_str}-{reward_norm_str}-{cfgs["train_cfgs"]["total_steps"]}_steps-{obs_modality_norm}'
         cfgs.recurisve_update({'exp_name': exp_name, 'env_id': self.env_id, 'algo': self.algo})
         cfgs.train_cfgs.recurisve_update(
             {'epochs': cfgs.train_cfgs.total_steps // cfgs.algo_cfgs.steps_per_epoch},

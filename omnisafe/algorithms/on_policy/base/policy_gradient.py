@@ -231,6 +231,11 @@ class PolicyGradient(BaseAlgo):
             else:
                 self._logger.register_key('Train/DiscreteEntropy')
             self._logger.register_key('Train/MaskEntropy')
+            # Decoupled ratio logging for multi-head actors
+            self._logger.register_key('Train/PolicyRatioEnv', min_and_max=True)
+            self._logger.register_key('Train/PolicyRatioMask', min_and_max=True)
+            self._logger.register_key('Loss/Loss_pi_env', delta=True)
+            self._logger.register_key('Loss/Loss_pi_mask', delta=True)
         elif self._cfgs.model_cfgs.actor_type == 'random_mask':
             # Random mask actor: matches multihead pattern but with random mask selection
             if isinstance(self._env.action_space[0], gymnasium.spaces.Box):
@@ -397,42 +402,79 @@ class PolicyGradient(BaseAlgo):
         original_obs = obs
         old_distribution = self._actor_critic.actor(obs)
 
-        dataloader = DataLoader(
-            dataset=TensorDataset(obs, act, logp, target_value_r, target_value_c, adv_r, adv_c, unmasked_observation),
-            batch_size=self._cfgs.algo_cfgs.batch_size,
-            shuffle=True,
-        )
+        # Handle both single-head and multi-head logp
+        if isinstance(logp, tuple):
+            # Multi-head: unpack logp into separate tensors for TensorDataset
+            logp_env, logp_mask = logp
+            dataloader = DataLoader(
+                dataset=TensorDataset(obs, act, logp_env, logp_mask, target_value_r, target_value_c, adv_r, adv_c, unmasked_observation),
+                batch_size=self._cfgs.algo_cfgs.batch_size,
+                shuffle=True,
+            )
+            is_multihead_logp = True
+        else:
+            # Single-head: logp is a tensor
+            dataloader = DataLoader(
+                dataset=TensorDataset(obs, act, logp, target_value_r, target_value_c, adv_r, adv_c, unmasked_observation),
+                batch_size=self._cfgs.algo_cfgs.batch_size,
+                shuffle=True,
+            )
+            is_multihead_logp = False
 
         update_counts = 0
         final_kl = 0.0
 
         for i in track(range(self._cfgs.algo_cfgs.update_iters), description='Updating...'):
-            for (
-                    obs,
-                    act,
-                    logp,
-                    target_value_r,
-                    target_value_c,
-                    adv_r,
-                    adv_c,
-                    unmasked_observation,
-            ) in dataloader:
-                self._update_reward_critic(obs, target_value_r)
-                if self._cfgs.algo_cfgs.use_cost:
-                    self._update_cost_critic(obs, target_value_c)
-                self._update_actor(obs, act, logp, adv_r, adv_c, unmasked_observation)
+            if is_multihead_logp:
+                for (
+                        obs,
+                        act,
+                        logp_env,
+                        logp_mask,
+                        target_value_r,
+                        target_value_c,
+                        adv_r,
+                        adv_c,
+                        unmasked_observation,
+                ) in dataloader:
+                    # Reconstruct logp tuple for multi-head
+                    logp = (logp_env, logp_mask)
+                    self._update_reward_critic(obs, target_value_r)
+                    if self._cfgs.algo_cfgs.use_cost:
+                        self._update_cost_critic(obs, target_value_c)
+                    self._update_actor(obs, act, logp, adv_r, adv_c, unmasked_observation)
+            else:
+                for (
+                        obs,
+                        act,
+                        logp,
+                        target_value_r,
+                        target_value_c,
+                        adv_r,
+                        adv_c,
+                        unmasked_observation,
+                ) in dataloader:
+                    self._update_reward_critic(obs, target_value_r)
+                    if self._cfgs.algo_cfgs.use_cost:
+                        self._update_cost_critic(obs, target_value_c)
+                    self._update_actor(obs, act, logp, adv_r, adv_c, unmasked_observation)
 
             new_distribution = self._actor_critic.actor(original_obs)
 
             if isinstance(new_distribution, tuple):
+                # Environment action KL divergence
                 kl = (
-                        torch.distributions.kl.kl_divergence(old_distribution[0], new_distribution[0])
-                        .mean(-1, keepdim=True)
-                        .mean() +
+                    torch.distributions.kl.kl_divergence(old_distribution[0], new_distribution[0])
+                    .mean(-1, keepdim=True)
+                    .mean()
+                )
+                # Add mask KL divergence only if mask distribution exists (not None for RandomMask)
+                if new_distribution[1] is not None and old_distribution[1] is not None:
+                    kl = kl + (
                         torch.distributions.kl.kl_divergence(old_distribution[1], new_distribution[1])
                         .mean(-1, keepdim=True)
                         .mean()
-                )
+                    )
             else:
                 kl = (
                     torch.distributions.kl.kl_divergence(old_distribution, new_distribution)
@@ -540,7 +582,7 @@ class PolicyGradient(BaseAlgo):
             self,
             obs: torch.Tensor,
             act: torch.Tensor,
-            logp: torch.Tensor,
+            logp: torch.Tensor | tuple[torch.Tensor, torch.Tensor],
             adv_r: torch.Tensor,
             adv_c: torch.Tensor,
             unmasked_observation: torch.Tensor,
@@ -560,7 +602,7 @@ class PolicyGradient(BaseAlgo):
         Args:
             obs (torch.Tensor): The ``observation`` sampled from buffer.
             act (torch.Tensor): The ``action`` sampled from buffer.
-            logp (torch.Tensor): The ``log_p`` sampled from buffer.
+            logp (torch.Tensor | tuple): The ``log_p`` (scalar or tuple for multi-head).
             adv_r (torch.Tensor): The ``reward_advantage`` sampled from buffer.
             adv_c (torch.Tensor): The ``cost_advantage`` sampled from buffer.
         """

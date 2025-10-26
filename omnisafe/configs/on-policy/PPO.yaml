@@ -39,7 +39,7 @@ defaults:
     # target kl divergence
     target_kl: 0.02
     # entropy coefficient
-    entropy_coef: 0.0
+    entropy_coef: 0.01
     # normalize reward
     reward_normalize: True
     # normalize cost
@@ -82,6 +82,8 @@ defaults:
     sd_regulizer: False
     # sd regulizer coefficient
     sd_regulizer_coeff: 0.1
+    # Weight for mask head in decoupled multi-head PPO loss (reduces interference with env actions)
+    mask_loss_weight: 0.1
     # Flag to activate the regulizer for the "no-zero" constraint
     no_zero_act: False
     # zero barrier coefficient for constraint handling
@@ -124,11 +126,11 @@ defaults:
       activation: relu
       out_activation: tanh
       # learning rate
-      lr: 0.0003
+      lr: 0.00001
     critic:
       # hidden layer sizes
       hidden_sizes: [256, 256]
       # activation function
       activation: relu
       # learning rate
-      lr: 0.0003
+      lr: 0.00003

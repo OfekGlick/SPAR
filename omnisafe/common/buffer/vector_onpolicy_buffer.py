@@ -131,7 +131,16 @@ class VectorOnPolicyBuffer(OnPolicyBuffer):
         for buffer in self.buffers[1:]:
             for k, v in buffer.get().items():
                 data_pre[k].append(v)
-        data = {k: torch.cat(v, dim=0) for k, v in data_pre.items()}
+
+        # Handle concatenation - special case for tuple values (multi-head logp)
+        data = {}
+        for k, v in data_pre.items():
+            if isinstance(v[0], tuple):
+                # Multi-head logp: concatenate each element of the tuple separately
+                data[k] = tuple(torch.cat([item[i] for item in v], dim=0) for i in range(len(v[0])))
+            else:
+                # Normal case: concatenate tensors
+                data[k] = torch.cat(v, dim=0)
 
         adv_mean, adv_std, *_ = distributed.dist_statistics_scalar(data['adv_r'])
         cadv_mean, *_ = distributed.dist_statistics_scalar(data['adv_c'])

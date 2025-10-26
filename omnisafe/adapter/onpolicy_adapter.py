@@ -92,17 +92,33 @@ class OnPolicyAdapter(OnlineAdapter):
                 logger.store({'Value/cost': value_c})
             logger.store({'Value/reward': value_r})
 
-            buffer.store(
-                obs=obs,
-                act=act,
-                reward=reward,
-                cost=cost,
-                value_r=value_r,
-                value_c=value_c,
-                logp=logp,
-                # TODO: uncomment/comment this when implementing the auxiliary loss.
-                unmasked_observation=info['unmasked_observation'],
-            )
+            # Handle both single-head (scalar logp) and multi-head (tuple logp)
+            if isinstance(logp, tuple):
+                # Multi-head actor: separate log probs for env and mask
+                logp_env, logp_mask = logp
+                buffer.store(
+                    obs=obs,
+                    act=act,
+                    reward=reward,
+                    cost=cost,
+                    value_r=value_r,
+                    value_c=value_c,
+                    logp_env=logp_env,
+                    logp_mask=logp_mask,
+                    unmasked_observation=info['unmasked_observation'],
+                )
+            else:
+                # Single-head actor: scalar log prob
+                buffer.store(
+                    obs=obs,
+                    act=act,
+                    reward=reward,
+                    cost=cost,
+                    value_r=value_r,
+                    value_c=value_c,
+                    logp=logp,
+                    unmasked_observation=info['unmasked_observation'],
+                )
 
             obs = next_obs
             info = next_info
