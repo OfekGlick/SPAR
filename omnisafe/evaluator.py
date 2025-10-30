@@ -417,6 +417,7 @@ class Evaluator:  # pylint: disable=too-many-instance-attributes
             record_video: bool = False,
             video_top_k: int = 3,
             video_metric: str = 'reward',
+            sample_efc = False,
     ) -> tuple[list[float], list[float]]:
         """Evaluate the agent for num_episodes episodes.
 
@@ -519,8 +520,8 @@ class Evaluator:  # pylint: disable=too-many-instance-attributes
             if record_video and current_episode_frames:
                 all_episode_frames.append(current_episode_frames)
                 all_episode_masks.append(current_episode_masks)
-
-            wandb.log({"Evaluation/EpReward": ep_ret, "Evaluation/EpCost": ep_cost})
+            if not sample_efc:
+                wandb.log({"Evaluation/EpReward": ep_ret, "Evaluation/EpCost": ep_cost})
             print(f'Episode {episode + 1} results:')
             print(f'Episode reward: {ep_ret}')
             print(f'Episode cost: {ep_cost}')
@@ -671,6 +672,16 @@ class Evaluator:  # pylint: disable=too-many-instance-attributes
                 name_prefix=f'eval_ep{(episode_indices[ep_idx] + 1) if episode_indices is not None else (ep_idx + 1)}_reward{episode_rewards[ep_idx]:.1f}_cost{episode_costs[ep_idx]:.1f}',
             )
 
+            # Save sensor mask CSV for this episode
+            self._save_mask_csv(
+                masks=masks,
+                sensor_names=sensor_names,
+                video_dir=video_dir,
+                episode_index=(episode_indices[ep_idx] + 1) if episode_indices is not None else (ep_idx + 1),
+                episode_reward=episode_rewards[ep_idx],
+                episode_cost=episode_costs[ep_idx],
+            )
+
             # Log to wandb
             video_path = os.path.join(
                 video_dir,
@@ -682,6 +693,61 @@ class Evaluator:  # pylint: disable=too-many-instance-attributes
                 })
 
         print(f'Generated {len(all_episode_frames)} evaluation videos')
+
+    def _save_mask_csv(
+            self,
+            masks: list[np.ndarray],
+            sensor_names: list[str],
+            video_dir: str,
+            episode_index: int,
+            episode_reward: float,
+            episode_cost: float,
+    ) -> None:
+        """Save a CSV file documenting the sensor masks for each step of an episode.
+
+        Args:
+            masks: List of mask arrays for each step
+            sensor_names: Names of sensors/modalities
+            video_dir: Directory to save the CSV
+            episode_index: Episode number (1-indexed)
+            episode_reward: Total episode reward
+            episode_cost: Total episode cost
+        """
+        import csv
+
+        # Create CSV filename matching the video filename
+        csv_filename = f'eval_ep{episode_index}_reward{episode_reward:.1f}_cost{episode_cost:.1f}_masks.csv'
+        csv_path = os.path.join(video_dir, csv_filename)
+
+        # Get sensor costs from environment (if available)
+        try:
+            sensor_costs = self._env.costs
+        except AttributeError:
+            sensor_costs = [1.0] * len(sensor_names)  # Default cost of 1.0 per sensor
+
+        # Prepare CSV data
+        with open(csv_path, 'w', newline='', encoding='utf-8') as f:
+            # Create header: step, sensor columns, step_cost, cumulative_cost
+            fieldnames = ['step'] + sensor_names + ['step_cost', 'cumulative_cost']
+            writer = csv.DictWriter(f, fieldnames=fieldnames)
+            writer.writeheader()
+
+            cumulative_cost = 0.0
+            for step_idx, mask in enumerate(masks):
+                # Calculate step cost (sum of costs for active sensors)
+                step_cost = sum(sensor_costs[i] * mask[i] for i in range(len(mask)))
+                cumulative_cost += step_cost
+
+                # Create row data
+                row = {'step': step_idx + 1}  # 1-indexed
+                for i, sensor_name in enumerate(sensor_names):
+                    row[sensor_name] = int(mask[i]) if i < len(mask) else 0
+                row['step_cost'] = f'{step_cost:.4f}'
+                row['cumulative_cost'] = f'{cumulative_cost:.4f}'
+
+                writer.writerow(row)
+
+        print(f'  Saved mask CSV: {csv_filename}')
 
     @property
     def fps(self) -> int:

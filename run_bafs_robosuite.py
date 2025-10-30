@@ -10,15 +10,13 @@ from bafs_envs import budget_aware_robosuite
 
 custom_cfgs = {
     'train_cfgs': {
-        'total_steps': 250_000,  # 500 epochs × 500 steps (robosuite benchmark)
         'vector_env_nums': 1,
         'parallel': 1,
         'device': f'cuda:0' if torch.cuda.is_available() else 'cpu'
     },
     'algo_cfgs': {
-        'steps_per_epoch': 8192,  # Match robosuite horizon
         'update_iters': 40,
-        'batch_size': 4096,      # Typical for PPO with robosuite
+        'batch_size': 512,      # Typical for PPO with robosuite
         'gamma': 0.95,
         'zero_barrier_eps': 1.0e-8,  # numerical clamp inside log
         'zero_barrier_coef': 0.1,    # strength of the regularizer
@@ -26,21 +24,12 @@ custom_cfgs = {
     },
     'model_cfgs': {
         'actor_type': 'auto',  # Auto-detect based on action space
-        'actor': {
-            'hidden_sizes': [256, 256],  # Larger network for robosuite
-            'lr': 1e-5,
-        },
-        'critic': {
-            'hidden_sizes': [256, 256],  # Larger network for robosuite
-            'lr': 3e-5,
-        }
     },
     'logger_cfgs': {
         'wandb_project': 'BAFS 2.5 - Robosuite',
         'use_wandb': True,
     },
     'env_cfgs': {
-        'max_episode_steps': 500,  # Robosuite benchmark standard
         'robot': 'Panda',          # Recommended robot for benchmarking
         'control_freq': 20,
         'reward_scale': 1.0,
@@ -132,10 +121,10 @@ def detect_actor_type(env_id, env_cfgs):
         env_action_space = action_space[0]
         if isinstance(env_action_space, spaces.Box):
             print(f"Detected Tuple[Box, MultiBinary] action space → using 'multihead' (continuous)")
-            return 'multihead'
+            return 'multihead_double'
         elif isinstance(env_action_space, spaces.Discrete):
             print(f"Detected Tuple[Discrete, MultiBinary] action space → using 'multihead' (discrete)")
-            return 'multihead'
+            return 'multihead_double'
         else:
             raise ValueError(f"Unsupported action space in Tuple: {type(env_action_space)}")
 
@@ -169,7 +158,8 @@ def train_agent(eval_num_episodes=50):
         custom_cfgs.setdefault('model_cfgs', {})['actor_type'] = detected_actor_type
 
     agent = omnisafe.Agent(args.algo, args.env_id, custom_cfgs=custom_cfgs)
-    agent.learn()
+    # agent.learn()
+    agent.learn_with_sample_efficiency()
     agent.evaluate(num_episodes=eval_num_episodes)
 
 

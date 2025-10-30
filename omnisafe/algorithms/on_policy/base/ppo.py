@@ -88,7 +88,8 @@ class PPO(PolicyGradient):
             entropy = distribution[0].entropy().mean()
             # Add mask entropy only if mask distribution exists (not None for RandomMask)
             if distribution[1] is not None:
-                entropy = entropy + distribution[1].entropy().mean()
+                mask_weight = self._cfgs.algo_cfgs.get('mask_loss_weight', 0.1)
+                entropy = entropy + mask_weight * distribution[1].entropy().mean()
         else:
             entropy = distribution.entropy().mean()
         loss -= self._cfgs.algo_cfgs.entropy_coef * entropy
@@ -160,30 +161,29 @@ class PPO(PolicyGradient):
                 log_dict['Loss/Loss_pi_env'] = loss_env.item()
                 log_dict['Loss/Loss_pi_mask'] = loss_mask.item()
 
-            # Try to add distribution-specific metrics
-            try:
+            # Add distribution-specific metrics based on type
+            from torch.distributions import Normal, Categorical
+
+            if isinstance(distribution[0], Normal):
                 log_dict['Train/ContinuousEntropy'] = distribution[0].entropy().mean().item()
                 log_dict['Train/PolicyStd'] = self._actor_critic.actor.std
-            except:
+            elif isinstance(distribution[0], Categorical):
                 log_dict['Train/DiscreteEntropy'] = distribution[0].entropy().mean().item()
 
             self._logger.store(log_dict)
         else:
-            try:
-                self._logger.store(
-                    {
-                        'Train/Entropy': entropy,
-                        'Train/PolicyRatio': ratio,
-                        'Train/PolicyStd': self._actor_critic.actor.std,
-                        'Loss/Loss_pi': loss.mean().item(),
-                    },
-                )
-            except:
-                self._logger.store(
-                    {
-                        'Train/Entropy': entropy,
-                        'Train/PolicyRatio': ratio,
-                        'Loss/Loss_pi': loss.mean().item(),
-                    },
-                )
+            # Single-head logging with explicit type checking
+            from torch.distributions import Normal, Categorical
+
+            log_dict = {
+                'Train/Entropy': entropy,
+                'Train/PolicyRatio': ratio,
+                'Loss/Loss_pi': loss.mean().item(),
+            }
+
+            # Add PolicyStd only for continuous actions
+            if isinstance(distribution, Normal):
+                log_dict['Train/PolicyStd'] = self._actor_critic.actor.std
+
+            self._logger.store(log_dict)
         return loss

@@ -24,6 +24,8 @@ from omnisafe.models.base import Actor
 from omnisafe.typing import Activation, ActorType, InitFunction, OmnisafeSpace
 from omnisafe.models.actor.multiheadactor import MultiHeadActor
 from omnisafe.models.actor.multihead_discrete_actor import MultiHeadDiscreteActor
+from omnisafe.models.actor.multihead_double_actor import MultiHeadDoubleActor
+from omnisafe.models.actor.multihead_double_actor_discrete import MultiHeadDoubleActorDiscrete
 from omnisafe.models.actor.random_mask_actor_continuous import RandomMaskActorContinuous
 from omnisafe.models.actor.random_mask_actor_discrete import RandomMaskActorDiscrete
 from gymnasium import spaces
@@ -209,8 +211,45 @@ class ActorBuilder:
                     shared_hidden_sizes=shared_hidden_sizes,
                     weight_initialization_mode=self._weight_initialization_mode,
                 )
+        if actor_type == 'multihead_double':
+            # Double network architecture: completely independent networks for env and mask actions
+            # Dynamically determine if we need continuous or discrete version
+            if not isinstance(self._act_space, spaces.Tuple):
+                raise ValueError(
+                    f"Multihead double actor requires Tuple action space, got {type(self._act_space)}"
+                )
+
+            # Use all hidden_sizes for BOTH networks (independent architectures)
+            env_hidden_sizes = self._hidden_sizes  # e.g., [64, 64] for environment action network
+            mask_hidden_sizes = self._hidden_sizes  # e.g., [64, 64] for mask action network (can be different)
+
+            # Check if first element of Tuple is Box (continuous) or Discrete
+            if isinstance(self._act_space[0], spaces.Box):
+                # Continuous environment action + sensor mask
+                print(f"Using MultiHeadDoubleActor with env_net={env_hidden_sizes}, mask_net={mask_hidden_sizes}")
+                return MultiHeadDoubleActor(
+                    obs_space=self._obs_space,
+                    cont_act_space=self._act_space[0],
+                    disc_act_space=self._act_space[1],
+                    env_hidden_sizes=env_hidden_sizes,
+                    mask_hidden_sizes=mask_hidden_sizes,
+                    activation=self._activation,
+                    weight_initialization_mode=self._weight_initialization_mode,
+                )
+            else:
+                # Discrete environment action + sensor mask
+                print(f"Using MultiHeadDoubleActorDiscrete with env_net={env_hidden_sizes}, mask_net={mask_hidden_sizes}")
+                return MultiHeadDoubleActorDiscrete(
+                    obs_space=self._obs_space,
+                    disc_env_act_space=self._act_space[0],
+                    disc_mask_space=self._act_space[1],
+                    env_hidden_sizes=env_hidden_sizes,
+                    mask_hidden_sizes=mask_hidden_sizes,
+                    activation=self._activation,
+                    weight_initialization_mode=self._weight_initialization_mode,
+                )
         raise NotImplementedError(
             f'Actor type {actor_type} is not implemented! '
             f'Available actor types are: gaussian_learning, gaussian_sac, mlp, vae, perturbation, '
-            f'categorical_learning, multihead, random_mask.',
+            f'categorical_learning, multihead, random_mask, multihead_double.',
         )

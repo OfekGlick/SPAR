@@ -225,9 +225,11 @@ class PolicyGradient(BaseAlgo):
 
         self._logger.register_key('Train/Epoch')
         self._logger.register_key('Train/Entropy')
-        if self._cfgs.model_cfgs.actor_type == 'multihead':
+        if self._cfgs.model_cfgs.actor_type in ['multihead', 'multihead_double']:
+            # Register entropy keys based on environment action type
             if isinstance(self._env.action_space[0], gymnasium.spaces.Box):
                 self._logger.register_key('Train/ContinuousEntropy')
+                self._logger.register_key('Train/PolicyStd')
             else:
                 self._logger.register_key('Train/DiscreteEntropy')
             self._logger.register_key('Train/MaskEntropy')
@@ -240,6 +242,7 @@ class PolicyGradient(BaseAlgo):
             # Random mask actor: matches multihead pattern but with random mask selection
             if isinstance(self._env.action_space[0], gymnasium.spaces.Box):
                 self._logger.register_key('Train/ContinuousEntropy')
+                self._logger.register_key('Train/PolicyStd')
             else:
                 self._logger.register_key('Train/DiscreteEntropy')
             self._logger.register_key('Train/MaskEntropy')  # Will be constant (random), but logged for consistency
@@ -250,9 +253,6 @@ class PolicyGradient(BaseAlgo):
         self._logger.register_key('Train/LR')
         if self._cfgs.model_cfgs.actor_type == 'gaussian_learning':
             if isinstance(self._env.action_space, gymnasium.spaces.Box):
-                self._logger.register_key('Train/PolicyStd')
-        elif self._cfgs.model_cfgs.actor_type in ['multihead', 'random_mask']:
-            if isinstance(self._env.action_space[0], gymnasium.spaces.Box):
                 self._logger.register_key('Train/PolicyStd')
 
         self._logger.register_key('TotalEnvSteps')
@@ -297,6 +297,11 @@ class PolicyGradient(BaseAlgo):
         start_time = time.time()
         self._logger.log('INFO: Start training')
 
+        # Check if periodic evaluation is enabled via callback injection
+        eval_callback = getattr(self, '_eval_callback', None)
+        eval_interval = getattr(self, '_eval_interval', None)
+        next_eval_at = eval_interval if eval_interval else float('inf')
+
         for epoch in range(self._cfgs.train_cfgs.epochs):
             epoch_time = time.time()
 
@@ -320,9 +325,11 @@ class PolicyGradient(BaseAlgo):
             if self._cfgs.model_cfgs.actor.lr is not None:
                 self._actor_critic.actor_scheduler.step()
 
+            total_steps_so_far = (epoch + 1) * self._cfgs.algo_cfgs.steps_per_epoch
+
             self._logger.store(
                 {
-                    'TotalEnvSteps': (epoch + 1) * self._cfgs.algo_cfgs.steps_per_epoch,
+                    'TotalEnvSteps': total_steps_so_far,
                     'Time/FPS': self._cfgs.algo_cfgs.steps_per_epoch / (time.time() - epoch_time),
                     'Time/Total': (time.time() - start_time),
                     'Time/Epoch': (time.time() - epoch_time),
@@ -341,6 +348,12 @@ class PolicyGradient(BaseAlgo):
             if (epoch + 1) % self._cfgs.logger_cfgs.save_model_freq == 0 or (
                     epoch + 1) == self._cfgs.train_cfgs.epochs:
                 self._logger.torch_save()
+
+            # Periodic evaluation check (if callback was injected)
+            if eval_callback and total_steps_so_far >= next_eval_at:
+                self._logger.log(f'INFO: Running periodic evaluation at {total_steps_so_far} steps')
+                eval_callback(total_steps_so_far)
+                next_eval_at += eval_interval
 
         ep_ret = self._logger.get_stats('Metrics/EpRet')[0]
         ep_cost = self._logger.get_stats('Metrics/EpCost')[0]

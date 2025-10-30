@@ -68,8 +68,25 @@ def submit(path: Path) -> int:
     return proc.returncode
 
 
-def compute_budget(max_episode_steps: int, budget_ratio: float, feature_costs: np.ndarray) -> float:
-    """Budget = ratio × (max_episode_steps × sum(costs_per_step))"""
+def compute_budget(env_id: str, budget_ratio: float, feature_costs: np.ndarray) -> float:
+    """Budget = ratio × (max_episode_steps × sum(costs_per_step))
+
+    Args:
+        env_id: Environment ID to determine max_episode_steps from
+        budget_ratio: Fraction of total budget to use
+        feature_costs: Per-modality cost array
+
+    Returns:
+        Budget value
+    """
+    # Get max_episode_steps from the environment's duration config
+    # Following the pattern from BudgetAwareHighway.__init__ line 97
+    import gymnasium as gym
+    base_id = env_id.replace("budget-aware-", "")
+    temp_env = gym.make(base_id)
+    max_episode_steps = temp_env.unwrapped.config.get("duration", 40)
+    temp_env.close()
+
     return float(budget_ratio * max_episode_steps * float(np.sum(feature_costs)))
 
 
@@ -117,17 +134,18 @@ def main():
     p = argparse.ArgumentParser(description="Generate & submit Slurm jobs for BAFS experiments")
     p.add_argument("--run-py", type=str, default="/home/ofek.glick/BAFS_2/run_bafs_highway.py",
                    help="Path to run_bafs_highway.py entrypoint")
-    p.add_argument("--sbatch-template", type=str, default="sbatch_template_2.sh",
+    p.add_argument("--sbatch-template", type=str, default="sbatch_template_3.sh",
                    help="Path to sbatch template with '{}' placeholder")
     p.add_argument("--sbatch-dir", type=str,
                    help="Directory to write per-run sbatch files", default='./sbatch_files_highway')
     # Experiment parameters
     p.add_argument("--envs", nargs="+", default=[
-        "budget-aware-highway-fast-v0",
         # "budget-aware-merge-v0",
         "budget-aware-roundabout-v0",
-        "budget-aware-parking-v0",
-        # "budget-aware-intersection-v1",
+        # "budget-aware-parking-v0",
+        "budget-aware-intersection-v1",
+        "budget-aware-highway-fast-v0",
+
     ])
     p.add_argument("--safe-algos", nargs="*", default=SAFE_ALGOS)
     p.add_argument("--unsafe-algos", nargs="*", default=UNSAFE_ALGOS)
@@ -138,9 +156,9 @@ def main():
     p.add_argument("--sd-regulizer", nargs="+", type=int, default=[1, 0], help="0/1 for use_all_obs")
     p.add_argument("--no-zero-act", nargs="+", type=int, default=[0], help="0/1 for use_all_obs")
     p.add_argument("--seeds", nargs="+", type=int, default=[
-        i for i in range(0, 8)
+        i for i in range(1, 10)
     ])
-    p.add_argument("--total-steps", type=int, default=102_400)
+    p.add_argument("--total-steps", type=int, default=409_600)
     p.add_argument("--eval-num-episodes", type=int, default=250)
     p.add_argument("--max-episode-steps", type=int, default=250)
     p.add_argument("--steps-per-epoch", type=int, default=8192)
@@ -177,7 +195,7 @@ def main():
                                     use_all_obs=bool(use_all_obs),
                                     eval_num_episodes=args.eval_num_episodes,
                                     total_steps=args.total_steps,
-                                    budget=compute_budget(args.max_episode_steps, 1.0, feature_costs),
+                                    budget=compute_budget(env_id, 1.0, feature_costs),
                                     feature_cost=[f"{c:.4f}" for c in feature_costs.tolist()],
                                     max_episode_steps=args.max_episode_steps,
                                     steps_per_epoch=args.steps_per_epoch,
@@ -211,7 +229,7 @@ def main():
                                 for random_obs_selection in args.random_obs_selection:
                                     if not valid_combo(algo, bool(use_cost), bool(use_all_obs), bool(sd_reg), bool(no_zero_act), bool(random_obs_selection)):
                                         continue
-                                    budget = compute_budget(args.max_episode_steps, br, feature_costs)
+                                    budget = compute_budget(env_id, br, feature_costs)
                                     for seed in args.seeds:
                                         py_args = dict(
                                             algo=algo,

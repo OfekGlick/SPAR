@@ -125,20 +125,20 @@ def main():
     p.add_argument("--unsafe-algos", nargs="*", default=UNSAFE_ALGOS)
     p.add_argument("--budget-ratios", nargs="+", type=float, default=[0.5, 0.8])
     p.add_argument("--cost-usage", nargs="+", type=int, default=[1, 0], help="0/1 for use_cost")
-    p.add_argument("--all-obs-usage", nargs="+", type=int, default=[1, 0], help="0/1 for use_all_obs")
+    p.add_argument("--all-obs-usage", nargs="+", type=int, default=[0, 1], help="0/1 for use_all_obs")
     p.add_argument("--random-obs-selection", nargs="+", type=int, default=[1, 0], help="0/1 for use_all_obs")
     p.add_argument("--sd-regulizer", nargs="+", type=int, default=[1, 0], help="0/1 for sd_regulizer")
     p.add_argument("--no-zero-act", nargs="+", type=int, default=[0], help="0/1 for no_zero_act")
     p.add_argument("--seeds", nargs="+", type=int, default=[
-        i for i in range(0, 8)
+        i for i in range(2, 10)
     ])
     # Training parameters (robosuite benchmark defaults)
-    p.add_argument("--total-steps", type=int, default=250_000,
+    p.add_argument("--total-steps", type=int, default=2_000_000,
                    help="Total training steps (500 epochs × 500 steps)")
     p.add_argument("--eval-num-episodes", type=int, default=50)
     p.add_argument("--max-episode-steps", type=int, default=500,
                    help="Episode horizon (robosuite benchmark standard)")
-    p.add_argument("--steps-per-epoch", type=int, default=10000,
+    p.add_argument("--steps-per-epoch", type=int, default=8192,
                    help="Steps per epoch (should match max_episode_steps)")
 
     # Execution options

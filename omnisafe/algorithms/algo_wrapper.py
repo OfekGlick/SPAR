@@ -272,6 +272,72 @@ class AlgoWrapper:
 
         return ep_ret, ep_cost, ep_len
 
+    def learn_with_sample_efficiency(
+        self,
+        eval_fraction: float = 0.1,
+        eval_episodes: int = 3
+    ) -> tuple[float, float, float]:
+        """Train with periodic evaluations for sample efficiency tracking.
+
+        Evaluates the policy at regular intervals (default: every 10% of training)
+        and stores results in a dictionary that will be saved to the manifest CSV
+        at the end of training.
+
+        Args:
+            eval_fraction: Fraction of total training steps between evaluations (default: 0.1 = 10%)
+            eval_episodes: Episodes per evaluation (default: 50)
+
+        Returns:
+            ep_ret: The episode return of the final episode.
+            ep_cost: The episode cost of the final episode.
+            ep_len: The episode length of the final episode.
+        """
+        # Initialize sample efficiency tracking dictionary
+        self._sample_efficiency_data = {}
+
+        # Calculate dynamic interval based on total training steps
+        total_steps = self.custom_cfgs['train_cfgs']['total_steps']
+        steps_per_epoch = self.custom_cfgs['algo_cfgs']['steps_per_epoch']
+        eval_interval = int(total_steps * eval_fraction)
+
+        # Calculate epochs per evaluation and set save_model_freq accordingly
+        epochs_per_eval = int(eval_interval / steps_per_epoch)
+        original_save_freq = self.cfgs.logger_cfgs.save_model_freq
+        self.cfgs.logger_cfgs.save_model_freq = epochs_per_eval
+
+        print(f"\n{'='*80}")
+        print(f"SAMPLE EFFICIENCY TRACKING ENABLED")
+        print(f"{'='*80}")
+        print(f"Total training steps: {total_steps:,}")
+        print(f"Steps per epoch: {steps_per_epoch:,}")
+        print(f"Evaluation interval: {eval_interval:,} steps ({eval_fraction*100:.0f}%)")
+        print(f"Epochs per evaluation: {epochs_per_eval}")
+        print(f"Episodes per evaluation: {eval_episodes}")
+        print(f"Expected checkpoints: ~{int(1/eval_fraction)}")
+        print(f"Checkpoint save frequency: every {epochs_per_eval} epochs (auto-adjusted)")
+        print(f"{'='*80}\n")
+
+        # Inject callback into agent
+        self.agent._eval_interval = eval_interval
+        self.agent._eval_callback = lambda steps: self._run_periodic_eval(steps, eval_episodes)
+
+        # Run training (PolicyGradient.learn() will call callback at intervals)
+        ep_ret, ep_cost, ep_len = self.agent.learn()
+
+        # Restore original save frequency (good practice)
+        self.cfgs.logger_cfgs.save_model_freq = original_save_freq
+
+        # Initialize statistical tools
+        self._init_statistical_tools()
+
+        # Final evaluation (includes sample_efficiency_curve in manifest)
+        print(f"\n{'='*80}")
+        print(f"RUNNING FINAL EVALUATION")
+        print(f"{'='*80}\n")
+        self.evaluate(num_episodes=eval_episodes)
+
+        return ep_ret, ep_cost, ep_len
+
     def _init_statistical_tools(self) -> None:
         """Initialize statistical tools."""
         self._evaluator = Evaluator()
@@ -300,6 +366,55 @@ class AlgoWrapper:
             'mean',
             self.agent.logger.log_dir,
         )
+
+    def _run_periodic_eval(self, total_steps: int, num_episodes: int) -> None:
+        """Execute periodic evaluation and store in memory (not logged to CSV yet).
+
+        Args:
+            total_steps: Current training step count
+            num_episodes: Number of episodes to evaluate
+        """
+        # Find the most recently saved checkpoint (saved automatically by training loop)
+        torch_save_dir = os.path.join(self.agent.logger.log_dir, 'torch_save')
+        checkpoints = [f for f in os.listdir(torch_save_dir) if f.endswith('.pt')]
+        if not checkpoints:
+            print(f"[Warning] No checkpoints found for evaluation at {total_steps} steps")
+            return
+
+        # Use the most recent checkpoint (highest epoch number)
+        checkpoint_name = sorted(checkpoints, key=lambda x: int(x.split('-')[1].split('.')[0]))[-1]
+
+        # Load and evaluate the checkpoint
+        evaluator = Evaluator()
+        evaluator.load_saved(
+            save_dir=self.agent.logger.log_dir,
+            model_name=checkpoint_name,
+            render_mode='rgb_array'
+        )
+        results = evaluator.evaluate(
+            num_episodes=num_episodes,
+            cost_criteria=1.0,
+            record_video=False,  # Skip video for intermediate evaluations
+            sample_efc=True
+        )
+
+        # Store in running dictionary (will be saved to CSV at final evaluation)
+        self._sample_efficiency_data[str(total_steps)] = {
+            'reward_mean': float(np.mean(results['episode_rewards'])),
+            'reward_std': float(np.std(results['episode_rewards'])),
+            'cost_mean': float(np.mean(results['episode_costs'])),
+            'cost_std': float(np.std(results['episode_costs'])),
+            'episode_rewards': [float(r) for r in results['episode_rewards']],
+            'episode_costs': [float(c) for c in results['episode_costs']],
+        }
+
+        print(f"[Periodic Eval @ {total_steps} steps] "
+              f"Reward: {self._sample_efficiency_data[str(total_steps)]['reward_mean']:.2f} ± "
+              f"{self._sample_efficiency_data[str(total_steps)]['reward_std']:.2f}, "
+              f"Cost: {self._sample_efficiency_data[str(total_steps)]['cost_mean']:.2f} ± "
+              f"{self._sample_efficiency_data[str(total_steps)]['cost_std']:.2f}")
+
+        evaluator._env.close()
 
     def evaluate(self, num_episodes: int = 10, cost_criteria: float = 1.0, record_video: bool = True) -> None:
         """Agent Evaluation.
@@ -381,6 +496,9 @@ class AlgoWrapper:
             action_space_type = 'unknown'
             obs_space_shape = 'unknown'
 
+        # Include sample efficiency curve if it exists (from learn_with_sample_efficiency)
+        sample_efficiency_curve = getattr(self, '_sample_efficiency_data', {})
+
         self._log_to_manifest({
             'timestamp': timestamp,
             'algo': self.algo,
@@ -403,6 +521,7 @@ class AlgoWrapper:
             'cost_std': float(np.std(average_episode_costs)),
             'episode_rewards': json.dumps([float(r) for r in average_episode_rewards]),
             'episode_costs': json.dumps([float(c) for c in average_episode_costs]),
+            'sample_efficiency_curve': json.dumps(sample_efficiency_curve),
             'status': 'success',
             'log_dir': self.agent.logger.log_dir,
             'cost_normalized': self.cfgs['algo_cfgs'].get('cost_normalize', 'unknown'),
@@ -478,7 +597,7 @@ class AlgoWrapper:
 
         manifest_path = os.path.join(
             self.cfgs.logger_cfgs.rliable_json_path,
-            "run_manifest.csv"
+            "run_manifest2.csv"
         )
         os.makedirs(os.path.dirname(manifest_path), exist_ok=True)
 
@@ -492,6 +611,7 @@ class AlgoWrapper:
             'use_cost', 'use_all_obs', 'sd_regulizer', 'random_obs_selection',
             'total_steps', 'num_eval_episodes', 'reward_mean', 'reward_std',
             'cost_mean', 'cost_std', 'episode_rewards', 'episode_costs',
+            'sample_efficiency_curve',
             'status', 'log_dir', 'cost_normalized', 'reward_normalized', 'obs_modality_normalize'
         ]
 

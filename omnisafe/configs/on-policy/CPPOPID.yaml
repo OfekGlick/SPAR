@@ -126,7 +126,7 @@ defaults:
       activation: relu
       out_activation: tanh
       # learning rate
-      lr: 0.00001
+      lr: 0.00003
     critic:
       # hidden layer sizes
       hidden_sizes: [256, 256]

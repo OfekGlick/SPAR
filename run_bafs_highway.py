@@ -119,10 +119,10 @@ def detect_actor_type(env_id, env_cfgs):
         env_action_space = action_space[0]
         if isinstance(env_action_space, spaces.Box):
             print(f"Detected Tuple[Box, MultiBinary] action space → using 'multihead' (continuous)")
-            return 'multihead'
+            return 'multihead_double'
         elif isinstance(env_action_space, spaces.Discrete):
             print(f"Detected Tuple[Discrete, MultiBinary] action space → using 'multihead' (discrete)")
-            return 'multihead'
+            return 'multihead_double'
         else:
             raise ValueError(f"Unsupported action space in Tuple: {type(env_action_space)}")
 
@@ -156,7 +156,8 @@ def train_agent(eval_num_episodes=50):
     agent = omnisafe.Agent(args.algo, args.env_id, custom_cfgs=custom_cfgs)
     # if args.use_all_obs:
     #     agent.sample_random_actions(num_episodes=1_000, max_episode_length=500)
-    agent.learn()
+    # agent.learn()
+    agent.learn_with_sample_efficiency()
     agent.evaluate(num_episodes=eval_num_episodes)
 
 
