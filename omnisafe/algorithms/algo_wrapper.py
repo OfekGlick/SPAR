@@ -275,7 +275,7 @@ class AlgoWrapper:
     def learn_with_sample_efficiency(
         self,
         eval_fraction: float = 0.1,
-        eval_episodes: int = 3
+        eval_episodes: int = 50
     ) -> tuple[float, float, float]:
         """Train with periodic evaluations for sample efficiency tracking.
 

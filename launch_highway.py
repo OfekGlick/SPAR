@@ -156,7 +156,7 @@ def main():
     p.add_argument("--sd-regulizer", nargs="+", type=int, default=[1, 0], help="0/1 for use_all_obs")
     p.add_argument("--no-zero-act", nargs="+", type=int, default=[0], help="0/1 for use_all_obs")
     p.add_argument("--seeds", nargs="+", type=int, default=[
-        i for i in range(1, 10)
+        i for i in range(0, 10)
     ])
     p.add_argument("--total-steps", type=int, default=409_600)
     p.add_argument("--eval-num-episodes", type=int, default=250)

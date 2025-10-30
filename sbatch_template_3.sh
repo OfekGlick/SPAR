@@ -9,7 +9,7 @@
 #SBATCH --gres=gpu:1                  # Request n gpus
 #SBATCH --cpus-per-task=16            # number of cpus per task and per node
 
-#SBATCH -w clair1,plato1,plato2,bruno1,bruno2,bruno3,bruno4,nlp-l40-1,nlp-l40-2,tdk-bm4
+#SBATCH -w plato1,plato2,bruno1,bruno2,bruno3,bruno4,tdk-bm4
 
 #SBATCH -o logs/%N_%j_{job}_out.txt       # stdout goes here
 #SBATCH -e logs/%N_%j_{job}_err.txt       # stderr goes here

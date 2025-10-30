@@ -26,7 +26,7 @@ custom_cfgs = {
         'actor_type': 'auto',  # Auto-detect based on action space
     },
     'logger_cfgs': {
-        'wandb_project': 'BAFS 2.5 - Robosuite',
+        'wandb_project': 'BAFS Robosuite - Learning and Sample Efficiency',
         'use_wandb': True,
     },
     'env_cfgs': {
@@ -159,7 +159,7 @@ def train_agent(eval_num_episodes=50):
 
     agent = omnisafe.Agent(args.algo, args.env_id, custom_cfgs=custom_cfgs)
     # agent.learn()
-    agent.learn_with_sample_efficiency()
+    agent.learn_with_sample_efficiency(eval_episodes=eval_num_episodes)
     agent.evaluate(num_episodes=eval_num_episodes)
 
 

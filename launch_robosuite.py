@@ -126,14 +126,14 @@ def main():
     p.add_argument("--budget-ratios", nargs="+", type=float, default=[0.5, 0.8])
     p.add_argument("--cost-usage", nargs="+", type=int, default=[1, 0], help="0/1 for use_cost")
     p.add_argument("--all-obs-usage", nargs="+", type=int, default=[0, 1], help="0/1 for use_all_obs")
-    p.add_argument("--random-obs-selection", nargs="+", type=int, default=[1, 0], help="0/1 for use_all_obs")
+    p.add_argument("--random-obs-selection", nargs="+", type=int, default=[0, 1], help="0/1 for use_all_obs")
     p.add_argument("--sd-regulizer", nargs="+", type=int, default=[1, 0], help="0/1 for sd_regulizer")
     p.add_argument("--no-zero-act", nargs="+", type=int, default=[0], help="0/1 for no_zero_act")
     p.add_argument("--seeds", nargs="+", type=int, default=[
-        i for i in range(2, 10)
+        i for i in range(0, 10)
     ])
     # Training parameters (robosuite benchmark defaults)
-    p.add_argument("--total-steps", type=int, default=2_000_000,
+    p.add_argument("--total-steps", type=int, default=1_500_000,
                    help="Total training steps (500 epochs × 500 steps)")
     p.add_argument("--eval-num-episodes", type=int, default=50)
     p.add_argument("--max-episode-steps", type=int, default=500,
@@ -161,112 +161,110 @@ def main():
         modality_costs = get_modality_costs(env_id)
 
         # Unsafe baselines
-        for algo in args.unsafe_algos:
-            for use_all_obs in args.all_obs_usage:
-                for sd_reg in args.sd_regulizer:
-                    for no_zero_act in args.no_zero_act:
-                        for random_obs_selection in args.random_obs_selection:
-                            use_cost = False
-                            if not valid_combo(algo, use_cost, bool(use_all_obs), bool(sd_reg), bool(no_zero_act), bool(random_obs_selection)):
-                                continue
-                            for seed in args.seeds:
-                                # For unsafe baselines, use full budget
-                                budget = compute_budget(args.max_episode_steps, 1.0, modality_costs)
+        for use_all_obs in args.all_obs_usage:
+            for sd_reg in args.sd_regulizer:
+                for random_obs_selection in args.random_obs_selection:
+                    for algo in args.unsafe_algos:
+                        use_cost = False
+                        if not valid_combo(algo, use_cost, bool(use_all_obs), bool(sd_reg), False, bool(random_obs_selection)):
+                            continue
+                        for seed in args.seeds:
+                            # For unsafe baselines, use full budget
+                            budget = compute_budget(args.max_episode_steps, 1.0, modality_costs)
 
-                                py_args = dict(
-                                    algo=algo,
-                                    env_id=env_id,
-                                    use_cost=bool(use_cost),
-                                    use_all_obs=bool(use_all_obs),
-                                    eval_num_episodes=args.eval_num_episodes,
-                                    total_steps=args.total_steps,
-                                    budget=budget,
-                                    max_episode_steps=args.max_episode_steps,
-                                    steps_per_epoch=args.steps_per_epoch,
-                                    seed=seed,
-                                    sd_regulizer=bool(sd_reg),
-                                    no_zero_act=bool(no_zero_act),
-                                    random_obs_selection=bool(random_obs_selection),
-                                    obs_modality_normalize=True,
-                                )
+                            py_args = dict(
+                                algo=algo,
+                                env_id=env_id,
+                                use_cost=bool(use_cost),
+                                use_all_obs=bool(use_all_obs),
+                                eval_num_episodes=args.eval_num_episodes,
+                                total_steps=args.total_steps,
+                                budget=budget,
+                                max_episode_steps=args.max_episode_steps,
+                                steps_per_epoch=args.steps_per_epoch,
+                                seed=seed,
+                                sd_regulizer=bool(sd_reg),
+                                no_zero_act=False,
+                                random_obs_selection=bool(random_obs_selection),
+                                obs_modality_normalize=True,
+                            )
 
-                                python_cmd = build_python_command(args.run_py, py_args)
+                            python_cmd = build_python_command(args.run_py, py_args)
 
-                                # Clean environment name for filename
-                                env_short = env_id.replace("budget-aware-", "")
-                                fname = (f"{algo}_{env_short}_cost{int(use_cost)}_all{int(use_all_obs)}_"
-                                         f"B{int(budget)}_S{seed}_sd{int(sd_reg)}_nz{int(no_zero_act)}_random{int(random_obs_selection)}")
+                            # Clean environment name for filename
+                            env_short = env_id.replace("budget-aware-", "")
+                            fname = (f"{algo}_{env_short}_cost{int(use_cost)}_all{int(use_all_obs)}_"
+                                     f"B{int(budget)}_S{seed}_sd{int(sd_reg)}_random{int(random_obs_selection)}")
 
-                                if args.tag:
-                                    fname = f"{fname}_{args.tag}"
+                            if args.tag:
+                                fname = f"{fname}_{args.tag}"
 
-                                sbatch_path = out_dir / f"{fname}.sh"
-                                sbatch_text = format_sbatch(
-                                    template=sbatch_template,
-                                    job_name=fname,
-                                    python_cmd=python_cmd
-                                )
+                            sbatch_path = out_dir / f"{fname}.sh"
+                            sbatch_text = format_sbatch(
+                                template=sbatch_template,
+                                job_name=fname,
+                                python_cmd=python_cmd
+                            )
 
-                                if args.dry_run:
-                                    print(python_cmd)
-                                else:
-                                    create_file(sbatch_text, sbatch_path)
-                                    created.append(sbatch_path)
+                            if args.dry_run:
+                                print(python_cmd)
+                            else:
+                                create_file(sbatch_text, sbatch_path)
+                                created.append(sbatch_path)
 
         # Safe constrained algorithms
-        for algo in args.safe_algos:
-            for use_all_obs in args.all_obs_usage:
-                for use_cost in args.cost_usage:
-                    for br in args.budget_ratios:
-                        for sd_reg in args.sd_regulizer:
-                            for no_zero_act in args.no_zero_act:
-                                for random_obs_selection in args.random_obs_selection:
-                                    if not valid_combo(algo, bool(use_cost), bool(use_all_obs), bool(sd_reg),
-                                                       bool(no_zero_act), bool(random_obs_selection)):
-                                        continue
+        for use_all_obs in args.all_obs_usage:
+            for use_cost in args.cost_usage:
+                for br in args.budget_ratios:
+                    for sd_reg in args.sd_regulizer:
+                        for random_obs_selection in args.random_obs_selection:
+                            for algo in args.safe_algos:
+                                if not valid_combo(algo, bool(use_cost), bool(use_all_obs), bool(sd_reg),
+                                                   False, bool(random_obs_selection)):
+                                    continue
 
-                                    budget = compute_budget(args.max_episode_steps, br, modality_costs)
+                                budget = compute_budget(args.max_episode_steps, br, modality_costs)
 
-                                    for seed in args.seeds:
-                                        py_args = dict(
-                                            algo=algo,
-                                            env_id=env_id,
-                                            use_cost=bool(use_cost),
-                                            use_all_obs=bool(use_all_obs),
-                                            eval_num_episodes=args.eval_num_episodes,
-                                            total_steps=args.total_steps,
-                                            budget=budget,
-                                            max_episode_steps=args.max_episode_steps,
-                                            steps_per_epoch=args.steps_per_epoch,
-                                            seed=seed,
-                                            sd_regulizer=bool(sd_reg),
-                                            no_zero_act=bool(no_zero_act),
-                                            random_obs_selection=bool(random_obs_selection),
-                                            obs_modality_normalize=True,
-                                        )
+                                for seed in args.seeds:
+                                    py_args = dict(
+                                        algo=algo,
+                                        env_id=env_id,
+                                        use_cost=bool(use_cost),
+                                        use_all_obs=bool(use_all_obs),
+                                        eval_num_episodes=args.eval_num_episodes,
+                                        total_steps=args.total_steps,
+                                        budget=budget,
+                                        max_episode_steps=args.max_episode_steps,
+                                        steps_per_epoch=args.steps_per_epoch,
+                                        seed=seed,
+                                        sd_regulizer=bool(sd_reg),
+                                        no_zero_act=False,
+                                        random_obs_selection=bool(random_obs_selection),
+                                        obs_modality_normalize=True,
+                                    )
 
-                                        python_cmd = build_python_command(args.run_py, py_args)
+                                    python_cmd = build_python_command(args.run_py, py_args)
 
-                                        # Clean environment name for filename
-                                        env_short = env_id.replace("budget-aware-", "")
-                                        fname = (f"{algo}_{env_short}_cost{int(use_cost)}_all{int(use_all_obs)}_"
-                                                 f"B{int(budget)}_S{seed}_sd{int(sd_reg)}_nz{int(no_zero_act)}_random{int(random_obs_selection)}")
+                                    # Clean environment name for filename
+                                    env_short = env_id.replace("budget-aware-", "")
+                                    fname = (f"{algo}_{env_short}_cost{int(use_cost)}_all{int(use_all_obs)}_"
+                                             f"B{int(budget)}_S{seed}_sd{int(sd_reg)}_random{int(random_obs_selection)}")
 
-                                        if args.tag:
-                                            fname = f"{fname}_{args.tag}"
+                                    if args.tag:
+                                        fname = f"{fname}_{args.tag}"
 
-                                        sbatch_path = out_dir / f"{fname}.sh"
-                                        sbatch_text = format_sbatch(
-                                            template=sbatch_template,
-                                            job_name=fname,
-                                            python_cmd=python_cmd
-                                        )
+                                    sbatch_path = out_dir / f"{fname}.sh"
+                                    sbatch_text = format_sbatch(
+                                        template=sbatch_template,
+                                        job_name=fname,
+                                        python_cmd=python_cmd
+                                    )
 
-                                        if args.dry_run:
-                                            print(python_cmd)
-                                        else:
-                                            create_file(sbatch_text, sbatch_path)
-                                            created.append(sbatch_path)
+                                    if args.dry_run:
+                                        print(python_cmd)
+                                    else:
+                                        create_file(sbatch_text, sbatch_path)
+                                        created.append(sbatch_path)
 
     if args.dry_run:
         print("[dry-run] Done.")

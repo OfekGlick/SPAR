@@ -30,7 +30,7 @@ custom_cfgs = {
         'actor_type': 'auto'  # Auto-detect based on action space
     },
     'logger_cfgs': {
-        'wandb_project': 'BAFS 2.5 - Highway',
+        'wandb_project': 'BAFS Highway - Learning and Sample Efficiency',
         'use_wandb': True,
     },
     'env_cfgs': {
@@ -157,7 +157,7 @@ def train_agent(eval_num_episodes=50):
     # if args.use_all_obs:
     #     agent.sample_random_actions(num_episodes=1_000, max_episode_length=500)
     # agent.learn()
-    agent.learn_with_sample_efficiency()
+    agent.learn_with_sample_efficiency(eval_episodes=eval_num_episodes)
     agent.evaluate(num_episodes=eval_num_episodes)
 
 
