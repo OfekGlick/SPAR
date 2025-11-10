@@ -11,7 +11,6 @@ from omnisafe.envs.core import make as omnisafe_make
 from bafs_envs import budget_aware_highway
 custom_cfgs = {
     'train_cfgs': {
-        'total_steps': 409_600,
         'vector_env_nums': 1,
         'parallel': 1,
         'device': f'cuda:0' if torch.cuda.is_available() else 'cpu'
@@ -157,7 +156,7 @@ def train_agent(eval_num_episodes=50):
     # if args.use_all_obs:
     #     agent.sample_random_actions(num_episodes=1_000, max_episode_length=500)
     # agent.learn()
-    agent.learn_with_sample_efficiency(eval_episodes=eval_num_episodes)
+    agent.learn_with_sample_efficiency(eval_episodes=eval_num_episodes, eval_fraction=0.05)
     agent.evaluate(num_episodes=eval_num_episodes)
 
 

@@ -169,6 +169,11 @@ class BudgetAwareRobosuite(gym.Wrapper, CMDP):
         obs_spec = robosuite_env.observation_spec()
         all_obs_keys = list(obs_spec.keys())
 
+        # Remove aggregated state observations (they're duplicates of individual observations)
+        # e.g., 'robot0_proprio-state' is a concatenation of all robot proprioception observations
+        # and 'object-state' is a concatenation of all object observations
+        all_obs_keys = [key for key in all_obs_keys if not key.endswith("-state")]
+
         # Wrap with GymWrapper to make it gymnasium-compatible
         # Use all available keys (not just defaults) and flatten_obs=True
         gym_env = GymWrapper(robosuite_env, keys=all_obs_keys, flatten_obs=True)
@@ -306,12 +311,15 @@ class BudgetAwareRobosuite(gym.Wrapper, CMDP):
         }
 
         for key in obs_dict.keys():
-            if any(x in key for x in ["joint_pos", "joint_vel", "eef_pos", "eef_quat", "gripper_qpos"]):
-                groups["robot_proprioception"].append(key)
-            elif any(x in key for x in ["cube_pos", "cube_quat", "door_pos", "handle_pos", "hinge_qpos", "handle_qpos"]):
-                groups["object_states"].append(key)
-            elif any(x in key for x in ["to_", "_to_"]):
+            # Check for task features first (these take priority)
+            if any(x in key for x in ["to_", "_to_"]):
                 groups["task_features"].append(key)
+            # Check robot proprioception patterns
+            elif any(x in key for x in ["joint_pos", "joint_vel", "joint_acc", "eef_pos", "eef_quat", "gripper_qpos", "gripper_qvel"]):
+                groups["robot_proprioception"].append(key)
+            # Check object state patterns (generalized to catch cubeA, cubeB, etc.)
+            elif ("_pos" in key or "_quat" in key or "_qpos" in key) and not any(x in key for x in ["joint", "eef", "gripper"]):
+                groups["object_states"].append(key)
             else:
                 # Default: put in task_features
                 groups["task_features"].append(key)

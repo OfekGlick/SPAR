@@ -159,7 +159,7 @@ def train_agent(eval_num_episodes=50):
 
     agent = omnisafe.Agent(args.algo, args.env_id, custom_cfgs=custom_cfgs)
     # agent.learn()
-    agent.learn_with_sample_efficiency(eval_episodes=eval_num_episodes)
+    agent.learn_with_sample_efficiency(eval_episodes=eval_num_episodes, eval_fraction=0.05)
     agent.evaluate(num_episodes=eval_num_episodes)
 
 

@@ -177,6 +177,94 @@ class AutoReset(Wrapper):
         return obs, reward, cost, terminated, truncated, info
 
 
+class BudgetWrapper(Wrapper):
+    """Budget constraint wrapper that terminates episodes when cumulative cost exceeds a threshold.
+
+    .. warning::
+        The budget wrapper only supports single environment.
+
+    Examples:
+        >>> env = BudgetWrapper(env, device, budget_limit=25.0)
+
+    Args:
+        env (CMDP): The environment to wrap.
+        device (torch.device): The torch device to use.
+        budget_limit (float): The maximum cumulative cost allowed per episode.
+
+    Attributes:
+        _budget_limit (float): The maximum cumulative cost threshold.
+        _cumulative_cost (float): The current cumulative cost in the episode.
+    """
+
+    def __init__(self, env: CMDP, device: torch.device, budget_limit: float = 25.0) -> None:
+        """Initialize an instance of :class:`BudgetWrapper`."""
+        super().__init__(env=env, device=device)
+        assert self.num_envs == 1, 'BudgetWrapper only supports single environment'
+        self._budget_limit: float = budget_limit
+        self._cumulative_cost: float = 0.0
+
+    def reset(
+            self,
+            seed: int | None = None,
+            options: dict[str, Any] | None = None,
+    ) -> tuple[torch.Tensor, dict[str, Any]]:
+        """Reset the environment.
+
+        .. note::
+            Additionally, the cumulative cost will be reset to 0.
+
+        Args:
+            seed (int, optional): The random seed. Defaults to None.
+            options (dict[str, Any], optional): The options for the environment. Defaults to None.
+
+        Returns:
+            observation: The initial observation of the space.
+            info: Some information logged by the environment.
+        """
+        self._cumulative_cost = 0.0
+        return super().reset(seed=seed, options=options)
+
+    def step(
+            self,
+            action: torch.Tensor,
+    ) -> tuple[
+        torch.Tensor,
+        torch.Tensor,
+        torch.Tensor,
+        torch.Tensor,
+        torch.Tensor,
+        dict[str, Any],
+    ]:
+        """Run one timestep of the environment's dynamics using the agent actions.
+
+        .. note::
+            The cumulative cost is tracked and compared against the budget limit.
+            If exceeded, truncated is set to True and info['budget_exceeded'] is set.
+
+        Args:
+            action (torch.Tensor): The action from the agent or random.
+
+        Returns:
+            observation: The agent's observation of the current environment.
+            reward: The amount of reward returned after previous action.
+            cost: The amount of cost returned after previous action.
+            terminated: Whether the episode has ended.
+            truncated: Whether the episode has been truncated due to budget violation.
+            info: Some information logged by the environment.
+        """
+        obs, reward, cost, terminated, truncated, info = super().step(action)
+
+        # Accumulate cost
+        self._cumulative_cost += cost.item()
+
+        # Check budget violation
+        if self._cumulative_cost > self._budget_limit:
+            truncated = torch.tensor(True, dtype=torch.bool, device=self._device)
+            info['budget_exceeded'] = True
+
+        return obs, reward, cost, terminated, truncated, info
+
+
 class ObsNormalize(Wrapper):
     """Normalize the observation.
 

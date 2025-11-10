@@ -24,6 +24,7 @@ from omnisafe.envs.core import CMDP, make, support_envs
 from omnisafe.envs.wrapper import (
     ActionScale,
     AutoReset,
+    BudgetWrapper,
     CostNormalize,
     ObsNormalize,
     RewardNormalize,
@@ -116,6 +117,8 @@ class OnlineAdapter:
         +=================+========================================================+
         | TimeLimit       | Limit the time steps of the environment.               |
         +-----------------+--------------------------------------------------------+
+        | BudgetWrapper   | Terminate episode when cumulative cost exceeds budget. |
+        +-----------------+--------------------------------------------------------+
         | AutoReset       | Reset the environment when the episode is done.        |
         +-----------------+--------------------------------------------------------+
         | ObsNormalize    | Normalize the observation.                             |
@@ -150,6 +153,20 @@ class OnlineAdapter:
                 time_limit=self._eval_env.max_episode_steps,
                 device=self._device,
             )
+
+        # # Apply budget wrapper if budget_limit is specified
+        # if hasattr(self._cfgs.algo_cfgs, 'budget_limit') and self._cfgs.algo_cfgs.budget_limit is not None:
+        #     self._env = BudgetWrapper(
+        #         self._env,
+        #         device=self._device,
+        #         budget_limit=self._cfgs.algo_cfgs.budget_limit,
+        #     )
+        #     self._eval_env = BudgetWrapper(
+        #         self._eval_env,
+        #         device=self._device,
+        #         budget_limit=self._cfgs.algo_cfgs.budget_limit,
+        #     )
+
         if self._env.need_auto_reset_wrapper:
             self._env = AutoReset(self._env, device=self._device)
             self._eval_env = AutoReset(self._eval_env, device=self._device)

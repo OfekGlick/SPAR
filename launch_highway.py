@@ -134,7 +134,7 @@ def main():
     p = argparse.ArgumentParser(description="Generate & submit Slurm jobs for BAFS experiments")
     p.add_argument("--run-py", type=str, default="/home/ofek.glick/BAFS_2/run_bafs_highway.py",
                    help="Path to run_bafs_highway.py entrypoint")
-    p.add_argument("--sbatch-template", type=str, default="sbatch_template_3.sh",
+    p.add_argument("--sbatch-template", type=str, default="sbatch_template_2.sh",
                    help="Path to sbatch template with '{}' placeholder")
     p.add_argument("--sbatch-dir", type=str,
                    help="Directory to write per-run sbatch files", default='./sbatch_files_highway')
@@ -158,7 +158,7 @@ def main():
     p.add_argument("--seeds", nargs="+", type=int, default=[
         i for i in range(0, 10)
     ])
-    p.add_argument("--total-steps", type=int, default=409_600)
+    p.add_argument("--total-steps", type=int, default=500_000)
     p.add_argument("--eval-num-episodes", type=int, default=250)
     p.add_argument("--max-episode-steps", type=int, default=250)
     p.add_argument("--steps-per-epoch", type=int, default=8192)

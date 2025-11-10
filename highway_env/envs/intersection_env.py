@@ -42,7 +42,7 @@ class IntersectionEnv(AbstractEnv):
                 "duration": 13,
                 "destination": "o1",
                 "controlled_vehicles": 1,
-                "initial_vehicle_count": 13,
+                "initial_vehicle_count": 17,
                 "spawn_probability": 0.85,
                 "screen_width": 600,
                 "screen_height": 600,
