@@ -79,6 +79,7 @@ def adjust_config(custom_cfgs, args):
     custom_cfgs['algo_cfgs']['steps_per_epoch'] = args.steps_per_epoch
     custom_cfgs['env_cfgs']['use_all_obs'] = args.use_all_obs
     custom_cfgs['env_cfgs']['seed'] = args.seed
+    custom_cfgs['env_cfgs']['use_camera'] = False
     custom_cfgs['algo_cfgs']['sd_regulizer'] = args.sd_regulizer
     custom_cfgs['algo_cfgs']['no_zero_act'] = args.no_zero_act
     custom_cfgs['algo_cfgs']['obs_modality_normalize'] = args.obs_modality_normalize
@@ -160,7 +161,7 @@ def train_agent(eval_num_episodes=50):
     agent = omnisafe.Agent(args.algo, args.env_id, custom_cfgs=custom_cfgs)
     # agent.learn()
     agent.learn_with_sample_efficiency(eval_episodes=eval_num_episodes, eval_fraction=0.05)
-    agent.evaluate(num_episodes=eval_num_episodes)
+    # agent.evaluate(num_episodes=eval_num_episodes)
 
 
 if __name__ == '__main__':

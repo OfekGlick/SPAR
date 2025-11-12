@@ -100,3 +100,37 @@ class PPOLag(PPO):
         """
         penalty = self._lagrange.lagrangian_multiplier.item()
         return (adv_r - penalty * adv_c) / (1 + penalty)
+
+    def _compute_dual_adv(
+        self, adv_r: torch.Tensor, adv_c: torch.Tensor
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        r"""Compute dual advantages for multihead actor (environment + sensing).
+
+        For proper credit assignment in BAFS:
+        - Environment actor controls robot actions → affects reward only, NOT cost
+        - Sensing actor controls modality selection → affects cost directly
+
+        Returns separate advantages:
+        - adv_env: reward advantage only (for environment actor)
+        - adv_mask: reward - cost penalty (for sensing actor)
+
+        .. math::
+
+            A_{\text{env}} = A^{R}_{\pi_{\theta}} (s, a)
+
+            A_{\text{mask}} = \frac{1}{1 + \lambda} [
+                A^{R}_{\pi_{\theta}} (s, a)
+                - \lambda A^C_{\pi_{\theta}} (s, a)
+            ]
+
+        Args:
+            adv_r (torch.Tensor): The ``reward_advantage`` sampled from buffer.
+            adv_c (torch.Tensor): The ``cost_advantage`` sampled from buffer.
+
+        Returns:
+            Tuple of (adv_env, adv_mask) for environment and sensing actors respectively.
+        """
+        penalty = self._lagrange.lagrangian_multiplier.item()
+        adv_env = adv_r  # Environment actor: reward only
+        adv_mask = (adv_r - penalty * adv_c) / (1 + penalty)  # Sensing actor: reward - cost
+        return (adv_env, adv_mask)

@@ -619,7 +619,18 @@ class PolicyGradient(BaseAlgo):
             adv_r (torch.Tensor): The ``reward_advantage`` sampled from buffer.
             adv_c (torch.Tensor): The ``cost_advantage`` sampled from buffer.
         """
-        adv = self._compute_adv_surrogate(adv_r, adv_c)
+        # For multihead actors with cost constraints (BAFS), use dual advantages for proper credit assignment
+        # Environment actor gets reward only, sensing actor gets reward - cost
+        is_multihead = isinstance(logp, tuple)
+        has_dual_adv = hasattr(self, '_compute_dual_adv')
+
+        if is_multihead and has_dual_adv:
+            # Use separate advantages for environment and sensing actors
+            adv = self._compute_dual_adv(adv_r, adv_c)
+        else:
+            # Standard single advantage (backward compatibility)
+            adv = self._compute_adv_surrogate(adv_r, adv_c)
+
         if self._cfgs.algo_cfgs.sd_regulizer:
             loss = self._loss_pi(obs, act, logp, adv, unmasked_observation=unmasked_observation)
         else:

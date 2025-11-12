@@ -8,7 +8,7 @@ from typing import List
 # Import to get modality costs
 
 # Algorithm configurations
-SAFE_ALGOS = ['PPOLag', 'CPPOPID']
+SAFE_ALGOS = ['PPOLag']
 UNSAFE_ALGOS = ['PPO']
 
 
@@ -130,10 +130,10 @@ def main():
     p.add_argument("--sd-regulizer", nargs="+", type=int, default=[1, 0], help="0/1 for sd_regulizer")
     p.add_argument("--no-zero-act", nargs="+", type=int, default=[0], help="0/1 for no_zero_act")
     p.add_argument("--seeds", nargs="+", type=int, default=[
-        i for i in range(0, 10)
+        i for i in range(30, 40)
     ])
     # Training parameters (robosuite benchmark defaults)
-    p.add_argument("--total-steps", type=int, default=1_500_000,
+    p.add_argument("--total-steps", type=int, default=1_000_000,
                    help="Total training steps (500 epochs × 500 steps)")
     p.add_argument("--eval-num-episodes", type=int, default=50)
     p.add_argument("--max-episode-steps", type=int, default=500,

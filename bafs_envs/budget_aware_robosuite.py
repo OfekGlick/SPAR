@@ -173,7 +173,7 @@ class BudgetAwareRobosuite(gym.Wrapper, CMDP):
         # e.g., 'robot0_proprio-state' is a concatenation of all robot proprioception observations
         # and 'object-state' is a concatenation of all object observations
         all_obs_keys = [key for key in all_obs_keys if not key.endswith("-state")]
-
+        all_obs_keys = [key for key in all_obs_keys if 'image' not in key]
         # Wrap with GymWrapper to make it gymnasium-compatible
         # Use all available keys (not just defaults) and flatten_obs=True
         gym_env = GymWrapper(robosuite_env, keys=all_obs_keys, flatten_obs=True)
@@ -211,7 +211,8 @@ class BudgetAwareRobosuite(gym.Wrapper, CMDP):
             # Find keys that exist in both the modality group and GymWrapper's keys
             existing_keys = []
             mod_size = 0
-
+            if 'image' in mod_name:
+                continue
             for key in mod_keys:
                 # Only include keys that GymWrapper is actually using
                 if key in obs_keys and key in temp_obs_dict:
@@ -308,6 +309,7 @@ class BudgetAwareRobosuite(gym.Wrapper, CMDP):
             "robot_proprioception": [],
             "object_states": [],
             "task_features": [],
+            'image': []
         }
 
         for key in obs_dict.keys():
@@ -320,9 +322,8 @@ class BudgetAwareRobosuite(gym.Wrapper, CMDP):
             # Check object state patterns (generalized to catch cubeA, cubeB, etc.)
             elif ("_pos" in key or "_quat" in key or "_qpos" in key) and not any(x in key for x in ["joint", "eef", "gripper"]):
                 groups["object_states"].append(key)
-            else:
-                # Default: put in task_features
-                groups["task_features"].append(key)
+            elif 'image' in key:
+                groups["image"].append(key)
 
         # Remove empty groups
         return {k: v for k, v in groups.items() if v}
@@ -405,15 +406,6 @@ class BudgetAwareRobosuite(gym.Wrapper, CMDP):
         """
         feat_mask01 = feat_mask01.astype(flat.dtype, copy=False)
         gated = flat * feat_mask01
-
-        # if self.sensor_dropout_rescale:
-        #     # Count active modalities
-        #     n_active = np.sum(m_mod01 > 0.5)
-        #     if n_active > 0:
-        #         # Rescale to maintain consistent signal magnitude
-        #         rescale_factor = self._num_modalities / n_active
-        #         gated = gated * rescale_factor
-
         return gated
 
     def _mask_cost(self, m_mod01: np.ndarray) -> float:
@@ -589,234 +581,3 @@ class BudgetAwareRobosuite(gym.Wrapper, CMDP):
     @property
     def obs_modalities(self) -> List[str]:
         return list(self.obs_names)
-
-
-# # ============================================================================
-# # TESTING / DEMO
-# # ============================================================================
-#
-# def test_budget_aware_robosuite():
-#     """Test the BudgetAwareRobosuite environment."""
-#
-#     print("\n" + "=" * 80)
-#     print("TESTING BUDGET-AWARE ROBOSUITE ENVIRONMENT")
-#     print("=" * 80 + "\n")
-#
-#     # Test configuration
-#     env_config = {
-#         "env_id": "budget-aware-lift",
-#         "robot": "Panda",
-#         "modality_costs": {
-#             "robot_proprioception": 0.5,
-#             "object_states": 1.0,
-#             "task_features": 0.3,
-#         },
-#         "use_all_obs": False,  # Enable masking
-#         "max_episode_steps": 50,
-#         "seed": 42,
-#     }
-#
-#     print("Creating environment with configuration:")
-#     for key, value in env_config.items():
-#         print(f"  {key}: {value}")
-#     print()
-#
-#     # Create environment
-#     env = BudgetAwareRobosuite(**env_config)
-#
-#     # Display environment info
-#     print("=" * 80)
-#     print("ENVIRONMENT INFO")
-#     print("=" * 80)
-#     print(f"Observation space: {env.observation_space.shape}")
-#     print(f"Action space: {env.action_space}")
-#     print(f"Original action space: {env.original_action_space}")
-#     print(f"Number of modalities: {env._num_modalities}")
-#     print(f"Modality names: {env.obs_names}")
-#     print()
-#
-#     print("Modality mapping and costs:")
-#     for mod_name, (start, end) in env.mapping.items():
-#         size = end - start
-#         cost = env._modality_costs[mod_name]
-#         obs_keys = env._obs_keys_by_modality[mod_name]
-#         print(f"  {mod_name:30s}: dims [{start:3d}:{end:3d}]  size={size:3d}  cost={cost:.2f}")
-#         print(f"    Contains: {', '.join(obs_keys)}")
-#     print()
-#
-#     print(f"Total flattened observation dimension: {env._flat_dim}")
-#     print(f"Total observation dimension (with mask): {env.observation_space.shape[0]}")
-#     print(f"  = {env._flat_dim} (obs) + {env._num_modalities} (mask)")
-#     print()
-#
-#     # Run test episode
-#     print("=" * 80)
-#     print("RUNNING TEST EPISODE (5 steps)")
-#     print("=" * 80 + "\n")
-#
-#     obs, info = env.reset()
-#     print(f"Reset observation shape: {obs.shape}")
-#     print(f"Initial sensor mask: {info['sensor_mask']}")
-#     print()
-#
-#     total_reward = 0.0
-#     total_cost = 0.0
-#
-#     for step in range(5):
-#         # Random action
-#         action = env.create_random_action()
-#
-#         if not env.use_all_obs:
-#             env_action, modality_mask = action
-#             print(f"Step {step + 1}:")
-#             print(f"  Environment action: {env_action.cpu().numpy()}")
-#             print(f"  Modality mask: {modality_mask.cpu().numpy().astype(int)}")
-#             active_mods = [env.obs_names[i] for i in range(len(modality_mask)) if modality_mask[i] > 0.5]
-#             print(f"  Active modalities: {active_mods}")
-#         else:
-#             print(f"Step {step + 1}: Action: {action.cpu().numpy()}")
-#
-#         # Step environment
-#         obs, reward, cost, terminated, truncated, info = env.step(action)
-#
-#         print(f"  Reward: {reward.item():.4f}, Cost: {cost.item():.4f}")
-#         print(f"  Terminated: {terminated.item()}, Truncated: {truncated.item()}")
-#         print()
-#
-#         total_reward += reward.item()
-#         total_cost += cost.item()
-#
-#         if terminated or truncated:
-#             print("Episode ended early!")
-#             break
-#
-#     print("=" * 80)
-#     print("EPISODE SUMMARY")
-#     print("=" * 80)
-#     print(f"Total reward: {total_reward:.4f}")
-#     print(f"Total cost: {total_cost:.4f}")
-#     print(f"Average cost per step: {total_cost / max(1, step + 1):.4f}")
-#     print()
-#
-#     env.close()
-#
-#
-# def test_use_all_obs_mode():
-#     """Test the environment with use_all_obs=True (no masking)."""
-#
-#     print("\n" + "=" * 80)
-#     print("TESTING USE_ALL_OBS MODE (No Masking)")
-#     print("=" * 80 + "\n")
-#
-#     env = BudgetAwareRobosuite(
-#         env_id="budget-aware-door",
-#         robot="Panda",
-#         use_all_obs=True,  # No masking
-#         max_episode_steps=50,
-#         seed=42,
-#     )
-#
-#     print(f"Environment: Door Opening Task")
-#     print(f"Action space: {env.action_space} (continuous, no mask)")
-#     print(f"Observation space: {env.observation_space.shape}")
-#     print(f"Modalities: {env.obs_names}")
-#     print()
-#
-#     obs, info = env.reset()
-#     print(f"Reset observation shape: {obs.shape}")
-#     print(f"Initial sensor mask (all ones): {info['sensor_mask']}")
-#     print()
-#
-#     # In use_all_obs mode, cost should be sum of all modality costs
-#     expected_cost = sum(env._modality_costs.values())
-#     print(f"Expected cost per step (all modalities active): {expected_cost:.4f}")
-#     print()
-#
-#     # Take a few random steps
-#     total_cost = 0.0
-#     for step in range(5):
-#         action = env.create_random_action()
-#         print(f"Step {step + 1}:")
-#         print(f"  Action: {action.cpu().numpy()}")
-#
-#         obs, reward, cost, terminated, truncated, info = env.step(action)
-#         print(f"  Reward: {reward.item():.4f}, Cost: {cost.item():.4f}")
-#
-#         # Verify cost matches expected
-#         assert np.isclose(cost.item(), expected_cost), f"Cost mismatch: {cost.item()} != {expected_cost}"
-#         print(f"  ✓ Cost matches expected (all modalities)")
-#         print()
-#
-#         total_cost += cost.item()
-#
-#         if terminated or truncated:
-#             break
-#
-#     print(f"Total cost over {step + 1} steps: {total_cost:.4f}")
-#     env.close()
-#
-#
-# def compare_observation_modalities():
-#     """Compare observations with different modality masks."""
-#
-#     print("\n" + "=" * 80)
-#     print("COMPARING MASKED VS UNMASKED OBSERVATIONS")
-#     print("=" * 80 + "\n")
-#
-#     env = BudgetAwareRobosuite(
-#         env_id="budget-aware-lift",
-#         robot="Panda",
-#         use_all_obs=False,
-#         max_episode_steps=50,
-#         seed=42,
-#     )
-#
-#     obs, info = env.reset()
-#
-#     # Get unmasked observation (all modalities)
-#     unmasked_obs = info['unmasked_observation'].cpu().numpy()
-#     flat_obs = unmasked_obs[:-env._num_modalities]  # Remove mask suffix
-#
-#     print("Unmasked observation breakdown:")
-#     for mod_name in env.obs_names:
-#         start, end = env.mapping[mod_name]
-#         mod_obs = flat_obs[start:end]
-#         print(f"  {mod_name:30s}: shape={mod_obs.shape}, sample={mod_obs[:5]}")
-#     print()
-#
-#     # Create action with specific mask pattern
-#     # Test 1: Only robot proprioception
-#     env_action = env.original_action_space.sample()
-#     mask_robot_only = np.zeros(env._num_modalities, dtype=np.float32)
-#     mask_robot_only[0] = 1  # Assuming first modality is robot_proprioception
-#
-#     action = (
-#         torch.as_tensor(env_action, dtype=torch.float32).to(env._device),
-#         torch.as_tensor(mask_robot_only, dtype=torch.float32).to(env._device),
-#     )
-#
-#     obs, reward, cost, terminated, truncated, info = env.step(action)
-#     masked_obs = obs.cpu().numpy()
-#     flat_masked = masked_obs[:-env._num_modalities]
-#
-#     print(f"With mask {mask_robot_only.astype(int)} (robot only):")
-#     print(f"  Cost: {cost.item():.4f}")
-#     for mod_name in env.obs_names:
-#         start, end = env.mapping[mod_name]
-#         mod_obs = flat_masked[start:end]
-#         is_zero = np.allclose(mod_obs, 0)
-#         print(f"  {mod_name:30s}: {'MASKED (all zeros)' if is_zero else 'ACTIVE'}")
-#     print()
-#
-#     env.close()
-#
-#
-# if __name__ == "__main__":
-#     # Run all tests
-#     test_budget_aware_robosuite()
-#     test_use_all_obs_mode()
-#     compare_observation_modalities()
-#
-#     print("\n" + "=" * 80)
-#     print("ALL TESTS COMPLETED SUCCESSFULLY!")
-#     print("=" * 80 + "\n")

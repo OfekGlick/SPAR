@@ -57,12 +57,12 @@ class GymWrapper(Wrapper, gym.Env):
             # Add object obs if requested
             if self.env.use_object_obs:
                 keys += ["object-state"]
-            # Add image obs if requested
-            if self.env.use_camera_obs:
-                keys += [f"{cam_name}_image" for cam_name in self.env.camera_names]
             # Iterate over all robots to add to state
             for idx in range(len(self.env.robots)):
                 keys += ["robot{}_proprio-state".format(idx)]
+                # Add image obs if requested
+            if self.env.use_camera_obs:
+                keys += [f"{cam_name}_image" for cam_name in self.env.camera_names]
         self.keys = keys
 
         # Gym specific attributes
@@ -81,7 +81,6 @@ class GymWrapper(Wrapper, gym.Env):
             low = -high
             self.observation_space = spaces.Box(low, high)
         else:
-
             def get_box_space(sample):
                 """Util fn to obtain the space of a single numpy sample data"""
                 if np.issubdtype(sample.dtype, np.integer):
@@ -112,9 +111,10 @@ class GymWrapper(Wrapper, gym.Env):
         """
         ob_lst = []
         for key in self.keys:
+            if 'image' in key:
+                continue
             if key in obs_dict:
-                if verbose:
-                    print("adding key: {}".format(key))
+                print("adding key: {}, with the shape: {}".format(key, obs_dict[key].shape))
                 ob_lst.append(np.array(obs_dict[key]).flatten())
         return np.concatenate(ob_lst)
 

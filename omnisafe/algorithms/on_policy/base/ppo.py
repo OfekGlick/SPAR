@@ -68,9 +68,17 @@ class PPO(PolicyGradient):
             ratio_env_clipped = torch.clamp(ratio_env, 1 - clip, 1 + clip)
             ratio_mask_clipped = torch.clamp(ratio_mask, 1 - clip, 1 + clip)
 
-            # PPO loss for each head with SHARED advantage
-            loss_env = -torch.min(ratio_env * adv, ratio_env_clipped * adv).mean()
-            loss_mask = -torch.min(ratio_mask * adv, ratio_mask_clipped * adv).mean()
+            # Use separate advantages if provided (for proper credit assignment in BAFS)
+            # If adv is tuple: (adv_env, adv_mask) where env gets reward only, mask gets reward-cost
+            # If adv is single tensor: use same advantage for both (backward compatibility)
+            if isinstance(adv, tuple):
+                adv_env, adv_mask = adv
+            else:
+                adv_env = adv_mask = adv
+
+            # PPO loss for each head with appropriate advantages
+            loss_env = -torch.min(ratio_env * adv_env, ratio_env_clipped * adv_env).mean()
+            loss_mask = -torch.min(ratio_mask * adv_mask, ratio_mask_clipped * adv_mask).mean()
 
             # Weighted combination
             mask_weight = self._cfgs.algo_cfgs.get('mask_loss_weight', 0.1)

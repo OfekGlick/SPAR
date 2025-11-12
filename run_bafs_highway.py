@@ -157,7 +157,7 @@ def train_agent(eval_num_episodes=50):
     #     agent.sample_random_actions(num_episodes=1_000, max_episode_length=500)
     # agent.learn()
     agent.learn_with_sample_efficiency(eval_episodes=eval_num_episodes, eval_fraction=0.05)
-    agent.evaluate(num_episodes=eval_num_episodes)
+    # agent.evaluate(num_episodes=eval_num_episodes)
 
 
 if __name__ == '__main__':
