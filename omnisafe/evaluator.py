@@ -30,15 +30,6 @@ from gymnasium.utils.save_video import save_video
 import cv2
 import wandb
 
-from omnisafe.algorithms.model_based.base.ensemble import EnsembleDynamicsModel
-from omnisafe.algorithms.model_based.planner import (
-    ARCPlanner,
-    CAPPlanner,
-    CCEPlanner,
-    CEMPlanner,
-    RCEPlanner,
-    SafeARCPlanner,
-)
 from omnisafe.common import Normalizer
 from omnisafe.envs.core import CMDP, make
 from omnisafe.envs.wrapper import ActionRepeat, ActionScale, ObsNormalize, TimeLimit, ModalityObsNormalize, ModalityObsScale
@@ -69,18 +60,12 @@ class Evaluator:  # pylint: disable=too-many-instance-attributes
             env: CMDP | None = None,
             actor: Actor | None = None,
             actor_critic: ConstraintActorCritic | ConstraintActorQCritic | None = None,
-            dynamics: EnsembleDynamicsModel | None = None,
-            planner: (
-                    CEMPlanner | ARCPlanner | SafeARCPlanner | CCEPlanner | CAPPlanner | RCEPlanner | None
-            ) = None,
             render_mode: str = 'rgb_array',
     ) -> None:
         """Initialize an instance of :class:`Evaluator`."""
         self._env: CMDP | None = env
         self._actor: Actor | None = actor
         self._actor_critic: ConstraintActorCritic | ConstraintActorQCritic | None = actor_critic
-        self._dynamics: EnsembleDynamicsModel | None = dynamics
-        self._planner = planner
         self._dividing_line: str = '\n' + '#' * 50 + '\n'
 
         self._safety_budget: torch.Tensor
@@ -233,94 +218,10 @@ class Evaluator:  # pylint: disable=too-many-instance-attributes
             'RCEPETS',
             'CCEPETS',
         ]:
-            dynamics_state_space = (
-                self._env.coordinate_observation_space
-                if self._env.coordinate_observation_space is not None
-                else self._env.observation_space
+            raise ValueError(
+                f"Model-based algorithm '{self._cfgs['algo']}' is no longer supported. "
+                f"This codebase only supports on-policy and off-policy algorithms."
             )
-            assert self._env.action_space is not None and isinstance(
-                self._env.action_space.shape,
-                tuple,
-            )
-            if isinstance(self._env.action_space, Box):
-                action_space = self._env.action_space
-            else:
-                raise NotImplementedError
-            if self._cfgs['algo'] in ['LOOP', 'SafeLOOP']:
-                self._actor_critic = ConstraintActorQCritic(
-                    obs_space=dynamics_state_space,
-                    act_space=action_space,
-                    model_cfgs=self._cfgs.model_cfgs,
-                    epochs=1,
-                )
-            if self._actor_critic is not None:
-                self._actor_critic.load_state_dict(model_params['actor_critic'])
-                self._actor_critic.to(device)
-            self._dynamics = EnsembleDynamicsModel(
-                model_cfgs=self._cfgs.dynamics_cfgs,
-                device=torch.device(device),
-                state_shape=dynamics_state_space.shape,
-                action_shape=action_space.shape,
-                actor_critic=self._actor_critic,
-                rew_func=None,
-                cost_func=self._env.get_cost_from_obs_tensor,
-                terminal_func=None,
-            )
-            self._dynamics.ensemble_model.load_state_dict(model_params['dynamics'])
-            self._dynamics.ensemble_model.to(device)
-            if self._cfgs['algo'] in ['CCEPETS', 'RCEPETS', 'SafeLOOP']:
-                algo_to_planner = {
-                    'CCEPETS': (
-                        'CCEPlanner',
-                        {'cost_limit': self._cfgs['algo_cfgs']['cost_limit']},
-                    ),
-                    'RCEPETS': (
-                        'RCEPlanner',
-                        {'cost_limit': self._cfgs['algo_cfgs']['cost_limit']},
-                    ),
-                    'SafeLOOP': (
-                        'SafeARCPlanner',
-                        {
-                            'cost_limit': self._cfgs['algo_cfgs']['cost_limit'],
-                            'actor_critic': self._actor_critic,
-                        },
-                    ),
-                }
-            elif self._cfgs['algo'] in ['PETS', 'LOOP']:
-                algo_to_planner = {
-                    'PETS': ('CEMPlanner', {}),
-                    'LOOP': ('ARCPlanner', {'actor_critic': self._actor_critic}),
-                }
-            elif self._cfgs['algo'] in ['CAPPETS']:
-                lagrange: torch.nn.Parameter = torch.nn.Parameter(
-                    model_params['lagrangian_multiplier'].to('cpu'),
-                    requires_grad=False,
-                )
-                algo_to_planner = {
-                    'CAPPETS': (
-                        'CAPPlanner',
-                        {
-                            'cost_limit': self._cfgs['lagrange_cfgs']['cost_limit'],
-                            'lagrange': lagrange,
-                        },
-                    ),
-                }
-            planner_name = algo_to_planner[self._cfgs['algo']][0]
-            planner_special_cfgs = algo_to_planner[self._cfgs['algo']][1]
-            planner_cls = globals()[f'{planner_name}']
-            self._planner = planner_cls(
-                dynamics=self._dynamics,
-                planner_cfgs=self._cfgs.planner_cfgs,
-                gamma=float(self._cfgs.algo_cfgs.gamma),
-                cost_gamma=float(self._cfgs.algo_cfgs.cost_gamma),
-                dynamics_state_shape=dynamics_state_space.shape,
-                action_shape=action_space.shape,
-                action_max=1.0,
-                action_min=-1.0,
-                device='cpu',
-                **planner_special_cfgs,
-            )
-
         else:
             if 'Saute' in self._cfgs['algo'] or 'Simmer' in self._cfgs['algo']:
                 observation_space = Box(
@@ -434,9 +335,9 @@ class Evaluator:  # pylint: disable=too-many-instance-attributes
         Raises:
             ValueError: If the environment and the policy are not provided or created.
         """
-        if self._env is None or (self._actor is None and self._planner is None):
+        if self._env is None or self._actor is None:
             raise ValueError(
-                'The environment and the policy must be provided or created before evaluating the agent.',
+                'The environment and the actor must be provided or created before evaluating the agent.',
             )
 
         episode_rewards: list[float] = []
@@ -469,21 +370,7 @@ class Evaluator:  # pylint: disable=too-many-instance-attributes
                     self._safety_obs = self._safety_obs.to(obs.device)
                     obs = torch.cat([obs, self._safety_obs], dim=-1)
                 with torch.no_grad():
-                    if self._actor is not None:
-                        act = self._actor.predict(
-                            obs,
-                            deterministic=True,
-                        )
-                    elif self._planner is not None:
-                        act = self._planner.output_action(
-                            obs.unsqueeze(0).to('cpu'),
-                        )[
-                            0
-                        ].squeeze(0)
-                    else:
-                        raise ValueError(
-                            'The policy must be provided or created before evaluating the agent.',
-                        )
+                    act = self._actor.predict(obs, deterministic=True)
                 obs, rew, cost, terminated, truncated, info = self._env.step(act)
                 try:
                     current_episode_masks.append(info['sensor_mask'])
@@ -788,8 +675,8 @@ class Evaluator:  # pylint: disable=too-many-instance-attributes
                 self._env is not None
         ), 'The environment must be provided or created before rendering.'
         assert (
-                self._actor is not None or self._planner is not None
-        ), 'The policy or planner must be provided or created before rendering.'
+                self._actor is not None
+        ), 'The actor must be provided or created before rendering.'
         if save_replay_path is None:
             save_replay_path = os.path.join(self._save_dir, 'results', self._model_name.split('.')[0])
         os.makedirs(save_replay_path, exist_ok=True)
@@ -822,21 +709,7 @@ class Evaluator:  # pylint: disable=too-many-instance-attributes
                     self._safety_obs = self._safety_obs.to(obs.device)
                     obs = torch.cat([obs, self._safety_obs], dim=-1)
                 with torch.no_grad():
-                    if self._actor is not None:
-                        act = self._actor.predict(
-                            obs,
-                            deterministic=True,
-                        )
-                    elif self._planner is not None:
-                        act = self._planner.output_action(
-                            obs.unsqueeze(0).to('cpu'),
-                        )[
-                            0
-                        ].squeeze(0)
-                    else:
-                        raise ValueError(
-                            'The policy must be provided or created before evaluating the agent.',
-                        )
+                    act = self._actor.predict(obs, deterministic=True)
                 obs, rew, cost, terminated, truncated, info = self._env.step(act)
                 if 'Saute' in self._cfgs['algo'] or 'Simmer' in self._cfgs['algo']:
                     self._safety_obs -= cost.unsqueeze(-1) / self._safety_budget

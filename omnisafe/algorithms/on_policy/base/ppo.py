@@ -101,17 +101,7 @@ class PPO(PolicyGradient):
         else:
             entropy = distribution.entropy().mean()
         loss -= self._cfgs.algo_cfgs.entropy_coef * entropy
-        # >>> NEW: zero-barrier regularizer (disc head: Bernoulli over sensors)
         if isinstance(distribution, tuple):
-            if self._cfgs.algo_cfgs.no_zero_act and hasattr(distribution[1], 'probs'):
-                p = distribution[1].probs.clamp(1e-6, 1 - 1e-6)  # [B, n_disc]
-                zero_prob = (1.0 - p).prod(dim=-1)  # P(all zeros)
-                p_atleast_one = (1.0 - zero_prob).clamp_min(self._cfgs.algo_cfgs.zero_barrier_eps)
-                zero_barrier = -torch.log(p_atleast_one)  # >= 0; →0 when P(at least one)=1
-                loss = loss - self._cfgs.algo_cfgs.zero_barrier_coef * zero_barrier.mean()
-                # log a couple of diagnostics
-                self._logger.store({'Train/ZeroProbMean': zero_prob.mean().item()})
-                self._logger.store({'Reg/ZeroBarrier': zero_barrier.mean().item()})
             if self._cfgs.algo_cfgs.sd_regulizer and unmasked_observation is not None:
                 # --- Sensor Dropout (SD) regularizer: student-teacher distillation ---
                 # Student: use the already-computed distribution on the *masked* obs (rollout view)

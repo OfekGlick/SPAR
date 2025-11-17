@@ -17,8 +17,6 @@
 from omnisafe.models.actor.gaussian_learning_actor import GaussianLearningActor
 from omnisafe.models.actor.gaussian_sac_actor import GaussianSACActor
 from omnisafe.models.actor.mlp_actor import MLPActor
-from omnisafe.models.actor.perturbation_actor import PerturbationActor
-from omnisafe.models.actor.vae_actor import VAE
 from omnisafe.models.actor.categorical_learning_actor import CategoricalLearningActor
 from omnisafe.models.base import Actor
 from omnisafe.typing import Activation, ActorType, InitFunction, OmnisafeSpace
@@ -102,22 +100,6 @@ class ActorBuilder:
             )
         if actor_type == 'mlp':
             return MLPActor(
-                self._obs_space,
-                self._act_space,
-                self._hidden_sizes,
-                activation=self._activation,
-                weight_initialization_mode=self._weight_initialization_mode,
-            )
-        if actor_type == 'vae':
-            return VAE(
-                self._obs_space,
-                self._act_space,
-                self._hidden_sizes,
-                activation=self._activation,
-                weight_initialization_mode=self._weight_initialization_mode,
-            )
-        if actor_type == 'perturbation':
-            return PerturbationActor(
                 self._obs_space,
                 self._act_space,
                 self._hidden_sizes,
@@ -250,6 +232,6 @@ class ActorBuilder:
                 )
         raise NotImplementedError(
             f'Actor type {actor_type} is not implemented! '
-            f'Available actor types are: gaussian_learning, gaussian_sac, mlp, vae, perturbation, '
+            f'Available actor types are: gaussian_learning, gaussian_sac, mlp, '
             f'categorical_learning, multihead, random_mask, multihead_double.',
         )

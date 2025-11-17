@@ -17,11 +17,8 @@
 import itertools
 from types import MappingProxyType
 
-from omnisafe.algorithms import model_based, off_policy, offline, on_policy
+from omnisafe.algorithms import off_policy, on_policy
 from omnisafe.algorithms.base_algo import BaseAlgo
-
-# Model-based Safe
-from omnisafe.algorithms.model_based import CAPPETS, CCEPETS, LOOP, PETS, RCEPETS, SafeLOOP
 
 # Off-Policy Safe
 from omnisafe.algorithms.off_policy import (
@@ -35,9 +32,6 @@ from omnisafe.algorithms.off_policy import (
     SACLag,
     TD3Lag,
 )
-
-# Offline Safe
-from omnisafe.algorithms.offline import BCQ, CCRR, CRR, VAEBC, BCQLag, COptiDICE
 
 # On-Policy Safe
 from omnisafe.algorithms.on_policy import (
@@ -70,8 +64,6 @@ from omnisafe.algorithms.on_policy import (
 ALGORITHMS = {
     'on-policy': tuple(on_policy.__all__),
     'off-policy': tuple(off_policy.__all__),
-    'model-based': tuple(model_based.__all__),
-    'offline': tuple(offline.__all__),
 }
 
 ALGORITHM2TYPE = {
@@ -84,5 +76,8 @@ assert len(ALGORITHM2TYPE) == len(__all__), 'Duplicate algorithm names found.'
 
 ALGORITHMS = MappingProxyType(ALGORITHMS)  # make this immutable
 ALGORITHM2TYPE = MappingProxyType(ALGORITHM2TYPE)  # make this immutable
+
+# Import AlgoWrapper after ALGORITHMS and ALGORITHM2TYPE are defined to avoid circular imports
+from omnisafe.algorithms.utils import AlgoWrapper
 
 del itertools, MappingProxyType

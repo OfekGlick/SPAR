@@ -84,12 +84,6 @@ defaults:
     sd_regulizer_coeff: 0.1
     # Weight for mask head in decoupled multi-head PPO loss (reduces interference with env actions)
     mask_loss_weight: 0.1
-    # Flag to activate the regulizer for the "no-zero" constraint
-    no_zero_act: False
-    # zero barrier coefficient for constraint handling
-    zero_barrier_coef: 0.1
-    # zero barrier epsilon for numerical stability
-    zero_barrier_eps: 1e-8
   # logger configurations
   logger_cfgs:
     # use wandb for logging
@@ -101,11 +95,11 @@ defaults:
     # save model frequency
     save_model_freq: 100
     # save logger path
-    log_dir: "./runs_CPPOPID"
+    log_dir: "./runs"
     # save model path
     window_lens: 100
     # path to save rliable json data
-    rliable_json_path: "./rliable_results_new"
+    rliable_json_path: "./rliable/data/raw"
   # model configurations
   model_cfgs:
     # weight initialization mode

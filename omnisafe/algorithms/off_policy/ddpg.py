@@ -532,21 +532,6 @@ class DDPG(BaseAlgo):
         """
         action = self._actor_critic.actor.predict(obs, deterministic=True)
         loss = -self._actor_critic.reward_critic(obs, action)[0].mean()
-
-        # >>> NEW: zero-barrier regularizer (only if actor is multihead)
-        distribution = self._actor_critic.actor(obs)  # will be tuple for MultiHeadActor
-        if isinstance(distribution, tuple) and hasattr(distribution[1], 'probs'):
-            p = distribution[1].probs.clamp(1e-6, 1 - 1e-6)
-            zero_prob = (1.0 - p).prod(dim=-1)
-            p_atleast_one = (1.0 - zero_prob).clamp_min(self._cfgs.algo_cfgs.zero_barrier_eps)
-            zero_barrier = -torch.log(p_atleast_one)
-            loss = loss + self._cfgs.algo_cfgs.zero_barrier_coef * zero_barrier.mean()
-            self._logger.store(
-                {
-                    'Train/ZeroProbMean': zero_prob.mean().item(),
-                    'Reg/ZeroBarrier': zero_barrier.mean().item()
-                }
-            )
         return loss
         # # Old:
         # return -self._actor_critic.reward_critic(obs, action)[0].mean()

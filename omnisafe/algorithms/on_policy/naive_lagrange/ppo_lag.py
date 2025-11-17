@@ -133,4 +133,4 @@ class PPOLag(PPO):
         penalty = self._lagrange.lagrangian_multiplier.item()
         adv_env = adv_r  # Environment actor: reward only
         adv_mask = (adv_r - penalty * adv_c) / (1 + penalty)  # Sensing actor: reward - cost
-        return (adv_env, adv_mask)
+        return adv_env, adv_mask

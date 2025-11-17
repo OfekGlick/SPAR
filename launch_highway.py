@@ -1,98 +1,37 @@
+"""
+Launch script for Highway-env BAFS experiments.
+
+Generates and optionally submits Slurm batch jobs for different algorithm/environment
+combinations with budget-aware observation masking.
+"""
+
 import argparse
-import subprocess
-import sys
 import time
 from pathlib import Path
-from typing import List
-
 import numpy as np
 
-# Local wrapper just to read modality costs; ensure it is importable in PYTHONPATH
+# Import shared utilities
+from utils.launch_utils import (
+    read_template, format_sbatch, create_file, submit, generate_jobs
+)
+
+# Import highway-specific configuration
+from configs.highway_config import SAFE_ALGOS, UNSAFE_ALGOS, DEFAULT_LAUNCH_PARAMS
+
+# Import wrapper to read modality costs
 from bafs_envs import budget_aware_highway
 
-# SAFE_ALGOS = ['SACLag', 'SPOLag', 'PPOLag', 'CUP', 'CPPOPID']
-SAFE_ALGOS = ['PPOLag', 'CPPOPID']
-# UNSAFE_ALGOS = ['SAC', 'SPO', 'PPO']
-UNSAFE_ALGOS = ['PPO']
 
-
-def read_template(template_path: str) -> str:
-    with open(template_path, "r", encoding="utf-8") as f:
-        return f.read()
-
-
-def build_python_command(run_py: str, args: dict) -> str:
-    """Build a CLI string. Lists are expanded as space-separated values.
-    Booleans are included as flags when True.
-    """
-    parts = ['python', run_py]
-    for k, v in args.items():
-        flag = f"--{k.replace('_', '-')}"
-        if isinstance(v, bool):
-            if v:
-                parts.append(flag)
-        elif isinstance(v, (list, tuple)):
-            if len(v) > 0:
-                parts.append(flag)
-                parts.extend([str(x) for x in v])
-        else:
-            parts.extend([flag, str(v)])
-    return " ".join(parts)
-
-
-def format_sbatch(template: str, job_name: str, python_cmd: str) -> str:
-    """The template must contain exactly one '{}' for the python command."""
-    try:
-        return template.format(job=job_name, python_cmd=python_cmd)
-    except Exception as e:
-        raise RuntimeError(
-            "Failed to format sbatch template. Ensure it contains a single '{}' placeholder"
-        ) from e
-
-
-def create_file(text: str, path: Path) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with open(path, "w", encoding="utf-8") as f:
-        f.write(text)
-
-
-def submit(path: Path) -> int:
-    print(f"[sbatch] {path}")
-    proc = subprocess.run(["sbatch", str(path)], capture_output=True, text=True)
-    # Slurm usually returns "Submitted batch job <id>"
-    if proc.returncode != 0:
-        print(proc.stdout.strip())
-        print(proc.stderr.strip(), file=sys.stderr)
-        raise RuntimeError(f"sbatch failed for {path.name}")
-    print(proc.stdout.strip())
-    return proc.returncode
-
-
-def compute_budget(env_id: str, budget_ratio: float, feature_costs: np.ndarray) -> float:
-    """Budget = ratio × (max_episode_steps × sum(costs_per_step))
+def get_feature_costs(env_id: str, max_episode_steps: int) -> np.ndarray:
+    """Instantiate wrapper to read per-modality costs.
 
     Args:
-        env_id: Environment ID to determine max_episode_steps from
-        budget_ratio: Fraction of total budget to use
-        feature_costs: Per-modality cost array
+        env_id: Environment ID
+        max_episode_steps: Maximum steps per episode
 
     Returns:
-        Budget value
+        Per-modality costs as numpy array
     """
-    # Get max_episode_steps from the environment's duration config
-    # Following the pattern from BudgetAwareHighway.__init__ line 97
-    import gymnasium as gym
-    base_id = env_id.replace("budget-aware-", "")
-    temp_env = gym.make(base_id)
-    max_episode_steps = temp_env.unwrapped.config.get("duration", 40)
-    temp_env.close()
-
-    return float(budget_ratio * max_episode_steps * float(np.sum(feature_costs)))
-
-
-def get_feature_costs(env_id: str, *, max_episode_steps: int) -> np.ndarray:
-    """Instantiate wrapper just to read per-modality costs."""
-    # Wrapper expects num_envs; pass a benign value
     env = budget_aware_highway.BudgetAwareHighway(
         env_id,
         num_envs=1,
@@ -101,70 +40,88 @@ def get_feature_costs(env_id: str, *, max_episode_steps: int) -> np.ndarray:
     try:
         return np.asarray(env.costs, dtype=np.float32)
     finally:
-        # Make sure to close underlying env resources
         try:
             env.close()
         except Exception:
             pass
 
 
-def valid_combo(algo: str, use_cost: bool, use_all_obs: bool, sd_regulizer: bool, no_zero_act: bool, random_obs_selection: bool) -> bool:
-    if use_cost and use_all_obs:
-        return False
-    if use_cost and algo in UNSAFE_ALGOS:
-        return False
-    if (not use_cost) and (algo in SAFE_ALGOS):
-        return False
-    if use_all_obs and (algo in SAFE_ALGOS):
-        return False
-    if no_zero_act and use_all_obs:
-        return False
-    if sd_regulizer and use_all_obs:
-        return False
-    if not sd_regulizer and not use_all_obs:
-        return False
-    if random_obs_selection and use_all_obs:
-        return False
-    if random_obs_selection and algo in SAFE_ALGOS:
-        return False
-    return True
+def build_py_args_highway(base_args: dict, costs: np.ndarray) -> dict:
+    """Add highway-specific arguments to base args.
+
+    Args:
+        base_args: Base arguments dictionary
+        costs: Per-modality costs
+
+    Returns:
+        Updated arguments dictionary with highway-specific fields
+    """
+    py_args = base_args.copy()
+    # Highway includes feature costs as CLI argument
+    py_args['feature_cost'] = [f"{c:.4f}" for c in costs.tolist()]
+    return py_args
+
+
+def build_filename_highway(job_info: dict) -> str:
+    """Build job filename for highway experiments.
+
+    Args:
+        job_info: Dictionary with job information (algo, env_id, etc.)
+
+    Returns:
+        Filename string
+    """
+    env_short = job_info['env_id'].replace("budget-aware-", "")
+    fname = (
+        f"{job_info['algo']}_{env_short}_"
+        f"cost{job_info['use_cost']}_all{job_info['use_all_obs']}_"
+        f"Budget{job_info['budget']}_Seed{job_info['seed']}_"
+        f"sd{job_info['sd_reg']}_random{job_info['random_obs_selection']}_"
+        f"pen{job_info['penalty_coef']}"
+    )
+    if job_info['tag']:
+        fname = f"{fname}_{job_info['tag']}"
+    return fname
 
 
 def main():
-    p = argparse.ArgumentParser(description="Generate & submit Slurm jobs for BAFS experiments")
-    p.add_argument("--run-py", type=str, default="/home/ofek.glick/BAFS_2/run_bafs_highway.py",
-                   help="Path to run_bafs_highway.py entrypoint")
-    p.add_argument("--sbatch-template", type=str, default="sbatch_template_2.sh",
-                   help="Path to sbatch template with '{}' placeholder")
-    p.add_argument("--sbatch-dir", type=str,
-                   help="Directory to write per-run sbatch files", default='./sbatch_files_highway')
-    # Experiment parameters
-    p.add_argument("--envs", nargs="+", default=[
-        # "budget-aware-merge-v0",
-        "budget-aware-roundabout-v0",
-        # "budget-aware-parking-v0",
-        "budget-aware-intersection-v1",
-        "budget-aware-highway-fast-v0",
+    """Main function to generate and submit Slurm jobs."""
+    p = argparse.ArgumentParser(description="Generate & submit Slurm jobs for BAFS Highway experiments")
 
-    ])
+    # Use defaults from config
+    p.add_argument("--run-py", type=str, default=DEFAULT_LAUNCH_PARAMS['run_py'],
+                   help="Path to run_bafs_highway.py entrypoint")
+    p.add_argument("--sbatch-template", type=str, default=DEFAULT_LAUNCH_PARAMS['sbatch_template'],
+                   help="Path to sbatch template with {job} and {python_cmd} placeholders")
+    p.add_argument("--sbatch-dir", type=str, default=DEFAULT_LAUNCH_PARAMS['sbatch_dir'],
+                   help="Directory to write per-run sbatch files")
+
+    # Experiment parameters
+    p.add_argument("--envs", nargs="+", default=DEFAULT_LAUNCH_PARAMS['envs'])
     p.add_argument("--safe-algos", nargs="*", default=SAFE_ALGOS)
     p.add_argument("--unsafe-algos", nargs="*", default=UNSAFE_ALGOS)
-    p.add_argument("--budget-ratios", nargs="+", type=float, default=[0.5, 0.8])
-    p.add_argument("--cost-usage", nargs="+", type=int, default=[1, 0], help="0/1 for use_cost")
-    p.add_argument("--all-obs-usage", nargs="+", type=int, default=[1, 0], help="0/1 for use_all_obs")
-    p.add_argument("--random-obs-selection", nargs="+", type=int, default=[1, 0], help="0/1 for use_all_obs")
-    p.add_argument("--sd-regulizer", nargs="+", type=int, default=[1, 0], help="0/1 for use_all_obs")
-    p.add_argument("--no-zero-act", nargs="+", type=int, default=[0], help="0/1 for use_all_obs")
-    p.add_argument("--seeds", nargs="+", type=int, default=[
-        i for i in range(0, 10)
-    ])
-    p.add_argument("--total-steps", type=int, default=500_000)
-    p.add_argument("--eval-num-episodes", type=int, default=250)
-    p.add_argument("--max-episode-steps", type=int, default=250)
-    p.add_argument("--steps-per-epoch", type=int, default=8192)
+    p.add_argument("--budget-ratios", nargs="+", type=float, default=DEFAULT_LAUNCH_PARAMS['budget_ratios'])
+    p.add_argument("--cost-usage", nargs="+", type=int, default=DEFAULT_LAUNCH_PARAMS['cost_usage'],
+                   help="0/1 for use_cost")
+    p.add_argument("--all-obs-usage", nargs="+", type=int, default=DEFAULT_LAUNCH_PARAMS['all_obs_usage'],
+                   help="0/1 for use_all_obs")
+    p.add_argument("--random-obs-selection", nargs="+", type=int, default=DEFAULT_LAUNCH_PARAMS['random_obs_selection'],
+                   help="0/1 for random_obs_selection")
+    p.add_argument("--sd-regulizer", nargs="+", type=int, default=DEFAULT_LAUNCH_PARAMS['sd_regulizer'],
+                   help="0/1 for sd_regulizer")
+    p.add_argument("--penalty-coef", nargs="+", type=float, default=DEFAULT_LAUNCH_PARAMS['penalty_coef'],
+                   help="Penalty coefficient values (0.0=no penalty, 1.0=full cost penalty)")
+    p.add_argument("--seeds", nargs="+", type=int, default=DEFAULT_LAUNCH_PARAMS['seeds'])
+    p.add_argument("--total-steps", type=int, default=DEFAULT_LAUNCH_PARAMS['total_steps'])
+    p.add_argument("--eval-num-episodes", type=int, default=DEFAULT_LAUNCH_PARAMS['eval_num_episodes'])
+    p.add_argument("--max-episode-steps", type=int, default=DEFAULT_LAUNCH_PARAMS['max_episode_steps'])
+    p.add_argument("--steps-per-epoch", type=int, default=DEFAULT_LAUNCH_PARAMS['steps_per_epoch'])
+
+    # Execution options
     p.add_argument("--submit", action="store_true", help="Actually submit to Slurm")
     p.add_argument("--dry-run", action="store_true", help="Only print commands; do not write or submit")
     p.add_argument("--tag", type=str, default="", help="Optional tag added to sbatch filenames")
+
     args = p.parse_args()
 
     assert args.max_episode_steps <= args.steps_per_epoch, \
@@ -173,93 +130,41 @@ def main():
     sbatch_template = read_template(args.sbatch_template)
     out_dir = Path(args.sbatch_dir)
 
-    created: List[Path] = []
-    for env_id in args.envs:
-        # Read per-modality costs from the wrapper; used for budget + CLI
-        feature_costs = get_feature_costs(env_id, max_episode_steps=args.max_episode_steps)
+    created = []
 
-        # Unsafe baselines
-        for algo in args.unsafe_algos:
-            for use_all_obs in args.all_obs_usage:
-                for sd_reg in args.sd_regulizer:
-                    for no_zero_act in args.no_zero_act:
-                        for random_obs_selection in args.random_obs_selection:
-                            use_cost = False
-                            if not valid_combo(algo, use_cost, bool(use_all_obs), bool(sd_reg), bool(no_zero_act), bool(random_obs_selection)):
-                                continue
-                            for seed in args.seeds:
-                                py_args = dict(
-                                    algo=algo,
-                                    env_id=env_id,
-                                    use_cost=bool(use_cost),
-                                    use_all_obs=bool(use_all_obs),
-                                    eval_num_episodes=args.eval_num_episodes,
-                                    total_steps=args.total_steps,
-                                    budget=compute_budget(env_id, 1.0, feature_costs),
-                                    feature_cost=[f"{c:.4f}" for c in feature_costs.tolist()],
-                                    max_episode_steps=args.max_episode_steps,
-                                    steps_per_epoch=args.steps_per_epoch,
-                                    seed=seed,
-                                    sd_regulizer=bool(sd_reg),
-                                    no_zero_act=bool(no_zero_act),
-                                    random_obs_selection=bool(random_obs_selection),
-                                    obs_modality_normalize=True,
-                                )
-                                python_cmd = build_python_command(args.run_py, py_args)
-                                env_short = env_id.replace("budget-aware-", "")
-                                fname = f"{algo}_{env_short}_cost{int(use_cost)}_all{int(use_all_obs)}_Budget{int(py_args['budget'])}_Seed{seed}_sd{int(sd_reg)}_nozero{int(no_zero_act)}_random{int(random_obs_selection)}"
-                                sbatch_text = format_sbatch(template=sbatch_template, job_name=fname, python_cmd=python_cmd)
-                                if args.tag:
-                                    fname = f"{fname}_{args.tag}"
-                                sbatch_path = out_dir / f"{fname}.sh"
-
-                                if args.dry_run:
-                                    print(python_cmd)
-                                else:
-                                    create_file(sbatch_text, sbatch_path)
-                                    created.append(sbatch_path)
-
-        # Safe constrained algorithms
-        for algo in args.safe_algos:
-            for use_all_obs in args.all_obs_usage:
-                for use_cost in args.cost_usage:
-                    for br in args.budget_ratios:
-                        for sd_reg in args.sd_regulizer:
-                            for no_zero_act in args.no_zero_act:
-                                for random_obs_selection in args.random_obs_selection:
-                                    if not valid_combo(algo, bool(use_cost), bool(use_all_obs), bool(sd_reg), bool(no_zero_act), bool(random_obs_selection)):
-                                        continue
-                                    budget = compute_budget(env_id, br, feature_costs)
-                                    for seed in args.seeds:
-                                        py_args = dict(
-                                            algo=algo,
-                                            env_id=env_id,
-                                            use_cost=bool(use_cost),
-                                            use_all_obs=bool(use_all_obs),
-                                            eval_num_episodes=args.eval_num_episodes,
-                                            total_steps=args.total_steps,
-                                            budget=budget,
-                                            feature_cost=[f"{c:.4f}" for c in feature_costs.tolist()],
-                                            max_episode_steps=args.max_episode_steps,
-                                            steps_per_epoch=args.steps_per_epoch,
-                                            seed=seed,
-                                            sd_regulizer=bool(sd_reg),
-                                            no_zero_act=bool(no_zero_act),
-                                            random_obs_selection=bool(random_obs_selection),
-                                            obs_modality_normalize=True,
-                                        )
-                                        python_cmd = build_python_command(args.run_py, py_args)
-                                        fname = f"{algo}_{env_id}_cost{int(use_cost)}_all{int(use_all_obs)}_B{int(budget)}_S{seed}_sd{int(sd_reg)}_nozero{int(no_zero_act)}_random{int(random_obs_selection)}"
-                                        sbatch_text = format_sbatch(template=sbatch_template, job_name=fname, python_cmd=python_cmd)
-                                        if args.tag:
-                                            fname = f"{fname}_{args.tag}"
-                                        sbatch_path = out_dir / f"{fname}.sh"
-
-                                        if args.dry_run:
-                                            print(python_cmd)
-                                        else:
-                                            create_file(sbatch_text, sbatch_path)
-                                            created.append(sbatch_path)
+    # Generate all job configurations using shared utilities
+    for python_cmd, filename in generate_jobs(
+        envs=args.envs,
+        safe_algos=args.safe_algos,
+        unsafe_algos=args.unsafe_algos,
+        budget_ratios=args.budget_ratios,
+        cost_usage=args.cost_usage,
+        all_obs_usage=args.all_obs_usage,
+        random_obs_selection_opts=args.random_obs_selection,
+        sd_regulizer_opts=args.sd_regulizer,
+        penalty_coef_opts=args.penalty_coef,
+        seeds=args.seeds,
+        run_py=args.run_py,
+        max_episode_steps=args.max_episode_steps,
+        total_steps=args.total_steps,
+        eval_num_episodes=args.eval_num_episodes,
+        steps_per_epoch=args.steps_per_epoch,
+        get_costs_callback=lambda env_id: get_feature_costs(env_id, args.max_episode_steps),
+        build_py_args_callback=build_py_args_highway,
+        build_filename_callback=build_filename_highway,
+        tag=args.tag,
+    ):
+        if args.dry_run:
+            print(python_cmd)
+        else:
+            sbatch_text = format_sbatch(
+                template=sbatch_template,
+                job_name=filename,
+                python_cmd=python_cmd
+            )
+            sbatch_path = out_dir / f"{filename}.sh"
+            create_file(sbatch_text, sbatch_path)
+            created.append(sbatch_path)
 
     if args.dry_run:
         print("[dry-run] Done.")
@@ -267,9 +172,8 @@ def main():
 
     if args.submit:
         for pth in created:
-            # small delay to avoid hammering scheduler/logs
             submit(pth)
-            time.sleep(0.1)
+            time.sleep(0.1)  # Small delay to avoid hammering scheduler
     else:
         print(f"Wrote {len(created)} sbatch files to {out_dir}")
         for p in created[:5]:

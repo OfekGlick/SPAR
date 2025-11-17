@@ -24,7 +24,14 @@ from gymnasium.spaces import Box
 
 from omnisafe.adapter.onpolicy_adapter import OnPolicyAdapter
 from omnisafe.common.logger import Logger
-from omnisafe.envs.wrapper import ActionScale, AutoReset, ObsNormalize, TimeLimit, Unsqueeze
+from omnisafe.envs.wrapper import (
+    ActionScale,
+    AutoReset,
+    ModalityObsNormalize,
+    ObsNormalize,
+    TimeLimit,
+    Unsqueeze,
+)
 from omnisafe.utils.config import Config
 
 
@@ -92,6 +99,11 @@ class SauteAdapter(OnPolicyAdapter):
         .. warning::
             The reward or cost normalization is not supported in Saute Adapter.
 
+        .. note::
+            For budget-aware environments (with modality-based observations),
+            ModalityObsNormalize is used to normalize only the base observations
+            while preserving mask bits.
+
         Args:
             obs_normalize (bool, optional): Whether to normalize the observation. Defaults to True.
             reward_normalize (bool, optional): Whether to normalize the reward. Defaults to True.
@@ -101,8 +113,23 @@ class SauteAdapter(OnPolicyAdapter):
             self._env = TimeLimit(self._env, device=self._device, time_limit=self._env.max_episode_steps)
         if self._env.need_auto_reset_wrapper:
             self._env = AutoReset(self._env, device=self._device)
+
         if obs_normalize:
-            self._env = ObsNormalize(self._env, device=self._device)
+            # Check if environment is budget-aware (has modality mapping)
+            is_budget_aware = hasattr(self._env, 'mapping') and hasattr(self._env, 'num_modalities')
+
+            if is_budget_aware:
+                # Use modality-specific normalization for budget-aware environments
+                self._env = ModalityObsNormalize(
+                    env=self._env,
+                    device=self._device,
+                    modality_to_span=self._env.mapping,
+                    mask_length=self._env.num_modalities,
+                )
+            else:
+                # Use standard observation normalization for regular environments
+                self._env = ObsNormalize(self._env, device=self._device)
+
         assert reward_normalize is False, 'Reward normalization is not supported'
         assert cost_normalize is False, 'Cost normalization is not supported'
         self._env = ActionScale(self._env, device=self._device, low=-1.0, high=1.0)

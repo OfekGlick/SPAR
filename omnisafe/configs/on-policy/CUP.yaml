@@ -76,10 +76,6 @@ defaults:
     penalty_coef: 0.0
     # use cost
     use_cost: True
-    # zero barrier coefficient for constraint handling
-    zero_barrier_coef: 0.1
-    # zero barrier epsilon for numerical stability
-    zero_barrier_eps: 1e-8
   # logger configurations
   logger_cfgs:
     # use wandb for logging
@@ -95,7 +91,7 @@ defaults:
     # save model path
     window_lens: 100
     # path to save rliable json data
-    rliable_json_path: "./rliable_results_new"
+    rliable_json_path: "./rliable/data/raw"
   # model configurations
   model_cfgs:
     # weight initialization mode

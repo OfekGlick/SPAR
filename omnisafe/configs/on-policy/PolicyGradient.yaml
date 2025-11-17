@@ -80,12 +80,6 @@ defaults:
     sd_regulizer: False
     # sd regulizer coefficient
     sd_regulizer_coeff: 0.1
-    # Flag to activate the regulizer for the "no-zero" constraint
-    no_zero_act: False
-    # zero barrier coefficient for constraint handling
-    zero_barrier_coef: 0.1
-    # zero barrier epsilon for numerical stability
-    zero_barrier_eps: 1e-8
   # logger configurations
   logger_cfgs:
     # use wandb for logging
@@ -101,7 +95,7 @@ defaults:
     # save model path
     window_lens: 100
     # path to save rliable json data
-    rliable_json_path: "./rliable_results_new"
+    rliable_json_path: "./rliable/data/raw"
   # model configurations
   model_cfgs:
     # weight initialization mode

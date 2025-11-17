@@ -1,0 +1,111 @@
+{
+  "probability_estimates": {
+    "CPPOPID_BAFS_Learned_Budget50pct,CPPOPID_BAFS_Learned_Budget80pct": 0.085,
+    "CPPOPID_BAFS_Learned_Budget50pct,PPO_AllObs_Learned": 0.0,
+    "CPPOPID_BAFS_Learned_Budget50pct,PPO_BAFS_Random": 0.05,
+    "CPPOPID_BAFS_Learned_Budget50pct,PPO_BAFS_Learned": 0.11,
+    "CPPOPID_BAFS_Learned_Budget50pct,PPOLag_BAFS_Learned_Budget50pct": 0.235,
+    "CPPOPID_BAFS_Learned_Budget50pct,PPOLag_BAFS_Learned_Budget80pct": 0.17,
+    "CPPOPID_BAFS_Learned_Budget80pct,PPO_AllObs_Learned": 0.0,
+    "CPPOPID_BAFS_Learned_Budget80pct,PPO_BAFS_Random": 0.55,
+    "CPPOPID_BAFS_Learned_Budget80pct,PPO_BAFS_Learned": 0.42500000000000004,
+    "CPPOPID_BAFS_Learned_Budget80pct,PPOLag_BAFS_Learned_Budget50pct": 0.8,
+    "CPPOPID_BAFS_Learned_Budget80pct,PPOLag_BAFS_Learned_Budget80pct": 0.43,
+    "PPO_AllObs_Learned,PPO_BAFS_Random": 1.0,
+    "PPO_AllObs_Learned,PPO_BAFS_Learned": 1.0,
+    "PPO_AllObs_Learned,PPOLag_BAFS_Learned_Budget50pct": 1.0,
+    "PPO_AllObs_Learned,PPOLag_BAFS_Learned_Budget80pct": 1.0,
+    "PPO_BAFS_Random,PPO_BAFS_Learned": 0.6,
+    "PPO_BAFS_Random,PPOLag_BAFS_Learned_Budget50pct": 0.8500000000000001,
+    "PPO_BAFS_Random,PPOLag_BAFS_Learned_Budget80pct": 0.39999999999999997,
+    "PPO_BAFS_Learned,PPOLag_BAFS_Learned_Budget50pct": 0.76,
+    "PPO_BAFS_Learned,PPOLag_BAFS_Learned_Budget80pct": 0.505,
+    "PPOLag_BAFS_Learned_Budget50pct,PPOLag_BAFS_Learned_Budget80pct": 0.26
+  },
+  "probability_cis": {
+    "CPPOPID_BAFS_Learned_Budget50pct,CPPOPID_BAFS_Learned_Budget80pct": [
+      0.015,
+      0.18
+    ],
+    "CPPOPID_BAFS_Learned_Budget50pct,PPO_AllObs_Learned": [
+      0.0,
+      0.0
+    ],
+    "CPPOPID_BAFS_Learned_Budget50pct,PPO_BAFS_Random": [
+      0.0,
+      0.15
+    ],
+    "CPPOPID_BAFS_Learned_Budget50pct,PPO_BAFS_Learned": [
+      0.0,
+      0.24762499999999987
+    ],
+    "CPPOPID_BAFS_Learned_Budget50pct,PPOLag_BAFS_Learned_Budget50pct": [
+      0.09737500000000004,
+      0.375
+    ],
+    "CPPOPID_BAFS_Learned_Budget50pct,PPOLag_BAFS_Learned_Budget80pct": [
+      0.05737500000000005,
+      0.29762499999999986
+    ],
+    "CPPOPID_BAFS_Learned_Budget80pct,PPO_AllObs_Learned": [
+      0.0,
+      0.0
+    ],
+    "CPPOPID_BAFS_Learned_Budget80pct,PPO_BAFS_Random": [
+      0.35,
+      0.75
+    ],
+    "CPPOPID_BAFS_Learned_Budget80pct,PPO_BAFS_Learned": [
+      0.25,
+      0.6226249999999999
+    ],
+    "CPPOPID_BAFS_Learned_Budget80pct,PPOLag_BAFS_Learned_Budget50pct": [
+      0.655,
+      0.9226249999999999
+    ],
+    "CPPOPID_BAFS_Learned_Budget80pct,PPOLag_BAFS_Learned_Budget80pct": [
+      0.255,
+      0.6076249999999999
+    ],
+    "PPO_AllObs_Learned,PPO_BAFS_Random": [
+      1.0,
+      1.0
+    ],
+    "PPO_AllObs_Learned,PPO_BAFS_Learned": [
+      1.0,
+      1.0
+    ],
+    "PPO_AllObs_Learned,PPOLag_BAFS_Learned_Budget50pct": [
+      1.0,
+      1.0
+    ],
+    "PPO_AllObs_Learned,PPOLag_BAFS_Learned_Budget80pct": [
+      1.0,
+      1.0
+    ],
+    "PPO_BAFS_Random,PPO_BAFS_Learned": [
+      0.45,
+      0.75
+    ],
+    "PPO_BAFS_Random,PPOLag_BAFS_Learned_Budget50pct": [
+      0.7,
+      1.0
+    ],
+    "PPO_BAFS_Random,PPOLag_BAFS_Learned_Budget80pct": [
+      0.25,
+      0.55
+    ],
+    "PPO_BAFS_Learned,PPOLag_BAFS_Learned_Budget50pct": [
+      0.595,
+      0.935
+    ],
+    "PPO_BAFS_Learned,PPOLag_BAFS_Learned_Budget80pct": [
+      0.3273750000000001,
+      0.6950000000000001
+    ],
+    "PPOLag_BAFS_Learned_Budget50pct,PPOLag_BAFS_Learned_Budget80pct": [
+      0.12,
+      0.4126249999999999
+    ]
+  }
+}

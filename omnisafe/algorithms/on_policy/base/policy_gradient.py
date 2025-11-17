@@ -213,9 +213,6 @@ class PolicyGradient(BaseAlgo):
         if isinstance(self._env.action_space, gymnasium.spaces.tuple.Tuple):
             for sensor_name in range(self._env.action_space[1].n):
                 self._logger.register_key(f'Metrics/EpActivationSensor_{sensor_name}')
-            if self._cfgs.algo_cfgs.no_zero_act:
-                self._logger.register_key('Reg/ZeroBarrier', delta=True)
-                self._logger.register_key('Train/ZeroProbMean', min_and_max=True)
             if self._cfgs.algo_cfgs.sd_regulizer:
                 self._logger.register_key('Loss/Aux', delta=True)
 
@@ -699,18 +696,6 @@ class PolicyGradient(BaseAlgo):
         std = self._actor_critic.actor.std
         ratio = torch.exp(logp_ - logp)
         loss = -(ratio * adv).mean()
-
-        # >>> NEW: zero-barrier regularizer (disc head: Bernoulli over sensors)
-        if isinstance(distribution, tuple) and hasattr(distribution[1], 'probs'):
-            p = distribution[1].probs.clamp(1e-6, 1 - 1e-6)  # [B, n_disc]
-            zero_prob = (1.0 - p).prod(dim=-1)  # P(all zeros)
-            p_atleast_one = (1.0 - zero_prob).clamp_min(self._cfgs.algo_cfgs.zero_barrier_eps)
-            zero_barrier = -torch.log(p_atleast_one)  # >= 0; →0 when P(at least one)=1
-            loss = loss + self._cfgs.algo_cfgs.zero_barrier_coef * zero_barrier.mean()
-
-            # log a couple of diagnostics
-            self._logger.store({'Train/ZeroProbMean': zero_prob.mean().item()})
-            self._logger.store({'Reg/ZeroBarrier': zero_barrier.mean().item()})
 
         try:
             entropy = sum([distribution[i].entropy().mean().item() for i in range(len(distribution))])

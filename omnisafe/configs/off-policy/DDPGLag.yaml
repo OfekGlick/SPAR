@@ -70,10 +70,6 @@ defaults:
     use_cost: True
     # warm up epoch
     warmup_epochs: 100
-    # zero barrier coefficient for constraint handling
-    zero_barrier_coef: 0.1
-    # zero barrier epsilon for numerical stability
-    zero_barrier_eps: 1e-8
   # logger configurations
   logger_cfgs:
     # use wandb for logging
