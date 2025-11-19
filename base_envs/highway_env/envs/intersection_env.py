@@ -42,7 +42,7 @@ class IntersectionEnv(AbstractEnv):
                 "duration": 13,
                 "destination": "o1",
                 "controlled_vehicles": 1,
-                "initial_vehicle_count": 17,
+                "initial_vehicle_count": 27,
                 "spawn_probability": 0.85,
                 "screen_width": 600,
                 "screen_height": 600,
@@ -322,7 +322,7 @@ class IntersectionEnv(AbstractEnv):
         longitudinal: float = 0,
         position_deviation: float = 1.0,
         speed_deviation: float = 1.0,
-        spawn_probability: float = 0.6,
+        spawn_probability: float = 0.85,
         go_straight: bool = False,
     ) -> None:
         if self.np_random.uniform() > spawn_probability:

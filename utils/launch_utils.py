@@ -256,7 +256,13 @@ def generate_jobs(
     """
     for env_id in envs:
         # Get per-modality costs (environment-specific)
-        costs = get_costs_callback(env_id)
+        # Callback can return either just costs, or (costs, max_episode_steps) tuple
+        costs_result = get_costs_callback(env_id)
+        if isinstance(costs_result, tuple):
+            costs, env_max_episode_steps = costs_result
+        else:
+            costs = costs_result
+            env_max_episode_steps = max_episode_steps  # Use default
 
         # ── Unsafe baselines ──────────────────────────────────────────────────
         for use_all_obs in all_obs_usage:
@@ -272,7 +278,7 @@ def generate_jobs(
 
                             for seed in seeds:
                                 # For unsafe baselines, use full budget
-                                budget = compute_budget(max_episode_steps, 1.0, costs)
+                                budget = compute_budget(env_max_episode_steps, 1.0, costs)
 
                                 base_args = dict(
                                     algo=algo,
@@ -282,7 +288,7 @@ def generate_jobs(
                                     eval_num_episodes=eval_num_episodes,
                                     total_steps=total_steps,
                                     budget=budget,
-                                    max_episode_steps=max_episode_steps,
+                                    max_episode_steps=env_max_episode_steps,
                                     steps_per_epoch=steps_per_epoch,
                                     seed=seed,
                                     sd_regulizer=bool(sd_reg),
@@ -325,7 +331,7 @@ def generate_jobs(
                                                   safe_algos, unsafe_algos, penalty_coef=0.0):
                                     continue
 
-                                budget = compute_budget(max_episode_steps, br, costs)
+                                budget = compute_budget(env_max_episode_steps, br, costs)
 
                                 for seed in seeds:
                                     base_args = dict(
@@ -336,7 +342,7 @@ def generate_jobs(
                                         eval_num_episodes=eval_num_episodes,
                                         total_steps=total_steps,
                                         budget=budget,
-                                        max_episode_steps=max_episode_steps,
+                                        max_episode_steps=env_max_episode_steps,
                                         steps_per_epoch=steps_per_epoch,
                                         seed=seed,
                                         sd_regulizer=bool(sd_reg),

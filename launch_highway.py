@@ -22,23 +22,23 @@ from configs.highway_config import SAFE_ALGOS, UNSAFE_ALGOS, DEFAULT_LAUNCH_PARA
 from bafs_envs import budget_aware_highway
 
 
-def get_feature_costs(env_id: str, max_episode_steps: int) -> np.ndarray:
-    """Instantiate wrapper to read per-modality costs.
+def get_feature_costs(env_id: str) -> tuple[np.ndarray, int]:
+    """Instantiate wrapper to read per-modality costs and actual episode duration.
 
     Args:
         env_id: Environment ID
-        max_episode_steps: Maximum steps per episode
 
     Returns:
-        Per-modality costs as numpy array
+        Tuple of (per-modality costs, actual max_episode_steps from environment)
     """
     env = budget_aware_highway.BudgetAwareHighway(
         env_id,
         num_envs=1,
-        max_episode_steps=max_episode_steps,
     )
     try:
-        return np.asarray(env.costs, dtype=np.float32)
+        costs = np.asarray(env.costs, dtype=np.float32)
+        actual_max_steps = env.max_episode_steps
+        return costs, actual_max_steps
     finally:
         try:
             env.close()
@@ -149,7 +149,7 @@ def main():
         total_steps=args.total_steps,
         eval_num_episodes=args.eval_num_episodes,
         steps_per_epoch=args.steps_per_epoch,
-        get_costs_callback=lambda env_id: get_feature_costs(env_id, args.max_episode_steps),
+        get_costs_callback=get_feature_costs,
         build_py_args_callback=build_py_args_highway,
         build_filename_callback=build_filename_highway,
         tag=args.tag,
@@ -171,7 +171,35 @@ def main():
         return
 
     if args.submit:
+        # Reorganize submissions to interleave seeds across job types
+        # Group files by job type (everything except seed)
+        from collections import defaultdict
+        import re
+
+        job_groups = defaultdict(list)
         for pth in created:
+            # Extract job type by removing seed information
+            # Pattern: _Seed<seed>_ in filename (highway uses "Seed" not "S")
+            job_type = re.sub(r'_Seed\d+_', '_SEED_', pth.stem)
+            job_groups[job_type].append(pth)
+
+        # Sort each group by seed
+        for job_type in job_groups:
+            job_groups[job_type].sort(key=lambda p: int(re.search(r'_Seed(\d+)_', p.stem).group(1)))
+
+        # Interleave in batches of 2 seeds
+        batch_size = 2
+        reordered = []
+        job_types = list(job_groups.keys())
+        max_seeds = max(len(files) for files in job_groups.values())
+
+        for batch_start in range(0, max_seeds, batch_size):
+            for job_type in job_types:
+                batch = job_groups[job_type][batch_start:batch_start + batch_size]
+                reordered.extend(batch)
+
+        # Submit in the new order
+        for pth in reordered:
             submit(pth)
             time.sleep(0.1)  # Small delay to avoid hammering scheduler
     else:

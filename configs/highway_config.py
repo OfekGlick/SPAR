@@ -55,12 +55,12 @@ CUSTOM_CFGS = {
 
 DEFAULT_LAUNCH_PARAMS = {
     'run_py': '/home/ofek.glick/SPAR/run_bafs_highway.py',
-    'sbatch_template': 'sbatch_template_clair.sh',
+    'sbatch_template': 'sbatch_template_general.sh',
     'sbatch_dir': './sbatch_files_highway',
     'envs': [
-        "budget-aware-roundabout-v0",
-        "budget-aware-intersection-v1",
         "budget-aware-highway-fast-v0",
+        # "budget-aware-roundabout-v0",
+        "budget-aware-intersection-v1",
     ],
     'budget_ratios': [0.2, 0.5, 0.8],
     'cost_usage': [1, 0],
@@ -69,7 +69,7 @@ DEFAULT_LAUNCH_PARAMS = {
     'sd_regulizer': [1, 0],
     'penalty_coef': [0.0, 1.0],  # Penalty coefficient for PPO (0=no penalty, 1=full cost penalty)
     'seeds': list(range(0, 10)),
-    'total_steps': 500_000,
+    'total_steps': 409_600,
     'eval_num_episodes': 250,
     'max_episode_steps': 250,
     'steps_per_epoch': 8192,

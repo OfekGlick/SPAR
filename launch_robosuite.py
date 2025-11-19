@@ -166,7 +166,35 @@ def main():
         return
 
     if args.submit:
+        # Reorganize submissions to interleave seeds across job types
+        # Group files by job type (everything except seed)
+        from collections import defaultdict
+        import re
+
+        job_groups = defaultdict(list)
         for pth in created:
+            # Extract job type by removing seed information
+            # Pattern: _S<seed>_ in filename
+            job_type = re.sub(r'_S\d+_', '_SEED_', pth.stem)
+            job_groups[job_type].append(pth)
+
+        # Sort each group by seed
+        for job_type in job_groups:
+            job_groups[job_type].sort(key=lambda p: int(re.search(r'_S(\d+)_', p.stem).group(1)))
+
+        # Interleave in batches of 2 seeds
+        batch_size = 2
+        reordered = []
+        job_types = list(job_groups.keys())
+        max_seeds = max(len(files) for files in job_groups.values())
+
+        for batch_start in range(0, max_seeds, batch_size):
+            for job_type in job_types:
+                batch = job_groups[job_type][batch_start:batch_start + batch_size]
+                reordered.extend(batch)
+
+        # Submit in the new order
+        for pth in reordered:
             submit(pth)
             time.sleep(0.1)  # Small delay to avoid hammering scheduler
     else:
