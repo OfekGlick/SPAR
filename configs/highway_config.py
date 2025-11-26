@@ -45,6 +45,9 @@ CUSTOM_CFGS = {
         'config': {
             # Dense traffic configuration
             "initial_spacing": 2,  # Closer initial spacing (meters)
+            "destination": None,  # Random turn each episode (intersection env)
+            "simulation_frequency": 15,  # [Hz]
+            "policy_frequency": 5,  # [Hz] - Ratio: 3:1 (lower than default 15:1)
         },
     },
 }
