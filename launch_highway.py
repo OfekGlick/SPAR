@@ -57,8 +57,25 @@ def build_py_args_highway(base_args: dict, costs: np.ndarray) -> dict:
         Updated arguments dictionary with highway-specific fields
     """
     py_args = base_args.copy()
-    # Highway includes feature costs as CLI argument
-    py_args['feature_cost'] = [f"{c:.4f}" for c in costs.tolist()]
+
+    # ── Filter costs based on available sensors ───────────────────────────────
+    if base_args.get('available_sensors') is not None:
+        from bafs_envs.budget_aware_highway import BudgetAwareHighway
+        all_sensors = BudgetAwareHighway.DEFAULT_TYPES
+        available = base_args['available_sensors']
+
+        # Filter costs array to match available sensors
+        filtered_costs = []
+        for sensor in available:
+            if sensor in all_sensors:
+                idx = all_sensors.index(sensor)
+                filtered_costs.append(costs[idx])
+
+        py_args['feature_cost'] = [f"{c:.4f}" for c in filtered_costs]
+    else:
+        # Include all costs (default behavior)
+        py_args['feature_cost'] = [f"{c:.4f}" for c in costs.tolist()]
+
     return py_args
 
 
@@ -72,12 +89,20 @@ def build_filename_highway(job_info: dict) -> str:
         Filename string
     """
     env_short = job_info['env_id'].replace("budget-aware-", "")
+
+    # Build sensor tag with full sensor names
+    sensor_tag = ""
+    if job_info.get('sensor_config') is not None:
+        # Use full sensor names joined by underscore
+        sensor_names = '_'.join(job_info['sensor_config'])
+        sensor_tag = f"_sens{sensor_names}"
+
     fname = (
         f"{job_info['algo']}_{env_short}_"
         f"cost{job_info['use_cost']}_all{job_info['use_all_obs']}_"
         f"Budget{job_info['budget']}_Seed{job_info['seed']}_"
         f"sd{job_info['sd_reg']}_random{job_info['random_obs_selection']}_"
-        f"pen{job_info['penalty_coef']}"
+        f"pen{job_info['penalty_coef']}{sensor_tag}"
     )
     if job_info['tag']:
         fname = f"{fname}_{job_info['tag']}"
@@ -117,12 +142,26 @@ def main():
     p.add_argument("--max-episode-steps", type=int, default=DEFAULT_LAUNCH_PARAMS['max_episode_steps'])
     p.add_argument("--steps-per-epoch", type=int, default=DEFAULT_LAUNCH_PARAMS['steps_per_epoch'])
 
+    # ── Sensor configuration ──────────────────────────────────────────────────
+    p.add_argument("--sensor-configs", nargs="+", action='append',
+                   default=None,
+                   help="Sensor configurations. Can specify multiple times. "
+                        "Example: --sensor-configs Kinematics LidarObservation")
+
     # Execution options
     p.add_argument("--submit", action="store_true", help="Actually submit to Slurm")
     p.add_argument("--dry-run", action="store_true", help="Only print commands; do not write or submit")
     p.add_argument("--tag", type=str, default="", help="Optional tag added to sbatch filenames")
 
     args = p.parse_args()
+
+    # ── Parse sensor configurations ───────────────────────────────────────────
+    # Convert from CLI format to list of configs
+    # CLI: --sensor-configs Kin Lid --sensor-configs Kin Occ
+    # Result: [['Kin', 'Lid'], ['Kin', 'Occ']]
+    sensor_configs = args.sensor_configs if args.sensor_configs else None
+    if sensor_configs is None:
+        sensor_configs = DEFAULT_LAUNCH_PARAMS.get('sensor_configs', [None])
 
     assert args.max_episode_steps <= args.steps_per_epoch, \
         "max_episode_steps must be <= steps_per_epoch (needed for episodic logging)"
@@ -149,6 +188,7 @@ def main():
         total_steps=args.total_steps,
         eval_num_episodes=args.eval_num_episodes,
         steps_per_epoch=args.steps_per_epoch,
+        sensor_configs=sensor_configs,
         get_costs_callback=get_feature_costs,
         build_py_args_callback=build_py_args_highway,
         build_filename_callback=build_filename_highway,

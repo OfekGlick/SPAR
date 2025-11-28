@@ -34,14 +34,15 @@ class ResultsLogger:
     - wandb (for visualization)
     """
 
-    def __init__(self, rliable_json_path: str):
+    def __init__(self, rliable_json_path: str, manifest_filename: str = "run_manifest.csv"):
         """Initialize results logger.
 
         Args:
             rliable_json_path: Base directory for rliable JSON and manifest files
+            manifest_filename: Name of the CSV manifest file (default: "run_manifest.csv")
         """
         self.rliable_json_path = rliable_json_path
-        self.manifest_path = os.path.join(rliable_json_path, "run_manifest.csv")
+        self.manifest_path = os.path.join(rliable_json_path, manifest_filename)
         self.json_path = os.path.join(rliable_json_path, "results.json")
 
     def log_to_rliable_json(self, bucket: str, key: str, value: float | list[float]) -> None:
@@ -95,6 +96,7 @@ class ResultsLogger:
             'timestamp', 'algo', 'env', 'seed', 'budget', 'obs_mode', 'actor_type',
             'action_space_type', 'obs_space_shape',
             'use_cost', 'use_all_obs', 'sd_regulizer', 'random_obs_selection',
+            'sensor_subset',
             'total_steps', 'num_eval_episodes', 'reward_mean', 'reward_std',
             'cost_mean', 'cost_std', 'episode_rewards', 'episode_costs',
             'sample_efficiency_curve',

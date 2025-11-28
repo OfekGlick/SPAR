@@ -99,9 +99,29 @@ def parse_arguments():
     #     help='list of feature costs',
     # )
     parser.add_argument(
+        '--available-sensors',
+        type=str,
+        nargs='+',
+        default=None,
+        help='List of sensor/modality names to make available for selection '
+             '(None = all sensors). Example: --available-sensors Kinematics LidarObservation',
+    )
+    parser.add_argument(
         '--seed',
         default=42,
         type=int,
         help='seed of the run',
+    )
+    parser.add_argument(
+        '--manifest-filename',
+        type=str,
+        default='run_manifest.csv',
+        help='CSV manifest filename for logging results (default: run_manifest.csv)',
+    )
+    parser.add_argument(
+        '--wandb-project',
+        type=str,
+        default=None,
+        help='Override wandb project name (e.g., "SPAR Highway - Sensor Ablation")',
     )
     return parser.parse_known_args()

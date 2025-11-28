@@ -289,7 +289,8 @@ class AlgoWrapper:
         steps_str = self.custom_cfgs['train_cfgs']['total_steps']
 
         # Initialize results logger
-        logger = ResultsLogger(self.cfgs.logger_cfgs.rliable_json_path)
+        manifest_filename = getattr(self.cfgs.logger_cfgs, 'manifest_filename', 'run_manifest.csv')
+        logger = ResultsLogger(self.cfgs.logger_cfgs.rliable_json_path, manifest_filename)
 
         # Log to rliable JSON
         bucket = logger.create_bucket_name(self.env_id, obs_mode, budget_str, steps_str)
@@ -391,6 +392,7 @@ class AlgoWrapper:
             'use_all_obs': self.custom_cfgs['env_cfgs'].get('use_all_obs', 'unknown'),
             'sd_regulizer': self.custom_cfgs['algo_cfgs'].get('sd_regulizer', 'unknown'),
             'random_obs_selection': self.custom_cfgs['model_cfgs'].get('actor_type') == 'random_mask',
+            'sensor_subset': json.dumps(self.custom_cfgs.get('env_cfgs', {}).get('available_sensors', None)),
             'total_steps': steps_str,
             'num_eval_episodes': num_episodes,
             'reward_mean': results.get_reward_mean(),

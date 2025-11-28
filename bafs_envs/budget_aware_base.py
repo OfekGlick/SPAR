@@ -47,6 +47,7 @@ class BudgetAwareBase(gym.Wrapper, CMDP, ABC):
         cast_dtype: np.dtype = np.float32,
         max_episode_steps: Optional[int] = None,
         modality_costs: Optional[Dict[str, float]] = None,
+        available_sensors: Optional[List[str]] = None,
         num_envs: int = 1,
         device: Optional[str] = None,
         seed: int = 42,
@@ -63,6 +64,7 @@ class BudgetAwareBase(gym.Wrapper, CMDP, ABC):
             cast_dtype: Data type for observations
             max_episode_steps: Episode horizon
             modality_costs: Dict mapping modality names to costs (default: all 1.0)
+            available_sensors: List of sensor names to make available (None = all sensors)
             num_envs: Number of parallel environments (for vectorized envs)
             device: PyTorch device for tensor operations
             seed: Random seed
@@ -79,6 +81,7 @@ class BudgetAwareBase(gym.Wrapper, CMDP, ABC):
         self._device = device if device else ('cuda:0' if torch.cuda.is_available() else 'cpu')
         self.seed_value = seed
         self.cost_penalty_coef = float(cost_penalty_coef)
+        self._available_sensors = available_sensors  # Stored for subclasses to validate/filter
 
         # ── Build modalities (environment-specific) ────────────────────────────
         # Subclass implements this to construct:

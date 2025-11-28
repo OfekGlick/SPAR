@@ -27,6 +27,7 @@ def build_python_command(run_py: str, args: dict) -> str:
 
     Lists are expanded as space-separated values.
     Booleans are included as flags when True.
+    None values are skipped (argument not included).
 
     Args:
         run_py: Path to Python script to run
@@ -37,6 +38,10 @@ def build_python_command(run_py: str, args: dict) -> str:
     """
     parts = ['python', run_py]
     for k, v in args.items():
+        # Skip None values - let argument use its default
+        if v is None:
+            continue
+
         flag = f"--{k.replace('_', '-')}"
         if isinstance(v, bool):
             if v:
@@ -220,6 +225,7 @@ def generate_jobs(
     total_steps: int,
     eval_num_episodes: int,
     steps_per_epoch: int,
+    sensor_configs: List[Optional[List[str]]],
     get_costs_callback: Callable[[str], Union[np.ndarray, dict]],
     build_py_args_callback: Callable[[dict], dict],
     build_filename_callback: Callable[[dict], str],
@@ -246,6 +252,7 @@ def generate_jobs(
         total_steps: Total training steps
         eval_num_episodes: Number of evaluation episodes
         steps_per_epoch: Steps per training epoch
+        sensor_configs: List of sensor configurations (None = all sensors)
         get_costs_callback: Function(env_id) -> costs (env-specific)
         build_py_args_callback: Function(base_args) -> py_args (env-specific modifications)
         build_filename_callback: Function(job_info) -> filename (env-specific naming)
@@ -264,7 +271,11 @@ def generate_jobs(
             costs = costs_result
             env_max_episode_steps = max_episode_steps  # Use default
 
-        # ── Unsafe baselines ──────────────────────────────────────────────────
+        # ── Loop over sensor configurations ───────────────────────────────────
+        for sensor_config in sensor_configs:
+            active_costs = costs  # Will be filtered in build_py_args_callback
+
+            # ── Unsafe baselines ──────────────────────────────────────────────────
         for use_all_obs in all_obs_usage:
             for sd_reg in sd_regulizer_opts:
                 for random_obs_selection in random_obs_selection_opts:
@@ -278,7 +289,7 @@ def generate_jobs(
 
                             for seed in seeds:
                                 # For unsafe baselines, use full budget
-                                budget = compute_budget(env_max_episode_steps, 1.0, costs)
+                                budget = compute_budget(env_max_episode_steps, 1.0, active_costs)
 
                                 base_args = dict(
                                     algo=algo,
@@ -295,10 +306,11 @@ def generate_jobs(
                                     random_obs_selection=bool(random_obs_selection),
                                     penalty_coef=float(penalty_coef),
                                     obs_modality_normalize=True,
+                                    available_sensors=sensor_config,
                                 )
 
                                 # Environment-specific modifications
-                                py_args = build_py_args_callback(base_args, costs)
+                                py_args = build_py_args_callback(base_args, active_costs)
 
                                 # Build command and filename
                                 python_cmd = build_python_command(run_py, py_args)
@@ -313,62 +325,65 @@ def generate_jobs(
                                     sd_reg=int(sd_reg),
                                     random_obs_selection=int(random_obs_selection),
                                     penalty_coef=float(penalty_coef),
+                                    sensor_config=sensor_config,
                                     tag=tag,
                                 )
                                 filename = build_filename_callback(job_info)
 
                                 yield (python_cmd, filename)
 
-        # ── Safe constrained algorithms ───────────────────────────────────────
-        for use_all_obs in all_obs_usage:
-            for use_cost in cost_usage:
-                for br in budget_ratios:
-                    for sd_reg in sd_regulizer_opts:
-                        for random_obs_selection in random_obs_selection_opts:
-                            for algo in safe_algos:
-                                if not valid_combo(algo, bool(use_cost), bool(use_all_obs),
-                                                  bool(sd_reg), bool(random_obs_selection),
-                                                  safe_algos, unsafe_algos, penalty_coef=0.0):
-                                    continue
+            # ── Safe constrained algorithms ───────────────────────────────────────
+            for use_all_obs in all_obs_usage:
+                for use_cost in cost_usage:
+                    for br in budget_ratios:
+                        for sd_reg in sd_regulizer_opts:
+                            for random_obs_selection in random_obs_selection_opts:
+                                for algo in safe_algos:
+                                    if not valid_combo(algo, bool(use_cost), bool(use_all_obs),
+                                                      bool(sd_reg), bool(random_obs_selection),
+                                                      safe_algos, unsafe_algos, penalty_coef=0.0):
+                                        continue
 
-                                budget = compute_budget(env_max_episode_steps, br, costs)
+                                    budget = compute_budget(env_max_episode_steps, br, active_costs)
 
-                                for seed in seeds:
-                                    base_args = dict(
-                                        algo=algo,
-                                        env_id=env_id,
-                                        use_cost=bool(use_cost),
-                                        use_all_obs=bool(use_all_obs),
-                                        eval_num_episodes=eval_num_episodes,
-                                        total_steps=total_steps,
-                                        budget=budget,
-                                        max_episode_steps=env_max_episode_steps,
-                                        steps_per_epoch=steps_per_epoch,
-                                        seed=seed,
-                                        sd_regulizer=bool(sd_reg),
-                                        random_obs_selection=bool(random_obs_selection),
-                                        penalty_coef=0.0,  # Safe algos typically don't use penalty
-                                        obs_modality_normalize=True,
-                                    )
+                                    for seed in seeds:
+                                        base_args = dict(
+                                            algo=algo,
+                                            env_id=env_id,
+                                            use_cost=bool(use_cost),
+                                            use_all_obs=bool(use_all_obs),
+                                            eval_num_episodes=eval_num_episodes,
+                                            total_steps=total_steps,
+                                            budget=budget,
+                                            max_episode_steps=env_max_episode_steps,
+                                            steps_per_epoch=steps_per_epoch,
+                                            seed=seed,
+                                            sd_regulizer=bool(sd_reg),
+                                            random_obs_selection=bool(random_obs_selection),
+                                            penalty_coef=0.0,  # Safe algos typically don't use penalty
+                                            obs_modality_normalize=True,
+                                            available_sensors=sensor_config,
+                                        )
 
-                                    # Environment-specific modifications
-                                    py_args = build_py_args_callback(base_args, costs)
+                                        # Environment-specific modifications
+                                        py_args = build_py_args_callback(base_args, active_costs)
 
-                                    # Build command and filename
-                                    python_cmd = build_python_command(run_py, py_args)
+                                        # Build command and filename
+                                        python_cmd = build_python_command(run_py, py_args)
 
-                                    job_info = dict(
-                                        algo=algo,
-                                        env_id=env_id,
-                                        use_cost=int(use_cost),
-                                        use_all_obs=int(use_all_obs),
-                                        budget=int(budget),
-                                        seed=seed,
-                                        sd_reg=int(sd_reg),
-                                        random_obs_selection=int(random_obs_selection),
-                                        penalty_coef=0.0,  # Safe algos typically don't use penalty
-                                        tag=tag,
-                                    )
-                                    filename = build_filename_callback(job_info)
+                                        job_info = dict(
+                                            algo=algo,
+                                            env_id=env_id,
+                                            use_cost=int(use_cost),
+                                            use_all_obs=int(use_all_obs),
+                                            budget=int(budget),
+                                            seed=seed,
+                                            sd_reg=int(sd_reg),
+                                            random_obs_selection=int(random_obs_selection),
+                                            penalty_coef=0.0,  # Safe algos typically don't use penalty
+                                            sensor_config=sensor_config,
+                                            tag=tag,
+                                        )
+                                        filename = build_filename_callback(job_info)
 
-                                    yield (python_cmd, filename)
+                                        yield (python_cmd, filename)

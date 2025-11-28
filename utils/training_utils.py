@@ -121,6 +121,21 @@ def adjust_config_base(custom_cfgs: dict, args) -> None:
     custom_cfgs['algo_cfgs']['sd_regulizer'] = args.sd_regulizer
     custom_cfgs['algo_cfgs']['obs_modality_normalize'] = args.obs_modality_normalize
 
+    # ── Sensor subset restriction ─────────────────────────────────────────────
+    if hasattr(args, 'available_sensors') and args.available_sensors is not None:
+        custom_cfgs['env_cfgs']['available_sensors'] = args.available_sensors
+        print(f"[Config] Restricting available sensors to: {args.available_sensors}")
+
+    # ── Manifest filename ──────────────────────────────────────────────────────
+    if hasattr(args, 'manifest_filename'):
+        custom_cfgs.setdefault('logger_cfgs', {})['manifest_filename'] = args.manifest_filename
+        print(f"[Config] Using manifest file: {args.manifest_filename}")
+
+    # ── Wandb project override ─────────────────────────────────────────────────
+    if hasattr(args, 'wandb_project') and args.wandb_project is not None:
+        custom_cfgs.setdefault('logger_cfgs', {})['wandb_project'] = args.wandb_project
+        print(f"[Config] Overriding wandb project: {args.wandb_project}")
+
     # ── Random mask baseline ──────────────────────────────────────────────────
 
     if args.random_obs_selection:

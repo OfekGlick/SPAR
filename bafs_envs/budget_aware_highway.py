@@ -53,6 +53,7 @@ class BudgetAwareHighway(BudgetAwareBase):
             sensor_dropout_rescale: bool = True,
             modality_costs: Dict[str, float] = None,
             cast_dtype: np.dtype = np.float32,
+            available_sensors: Optional[List[str]] = None,
             **kwargs: Any,
     ):
         if env_id is None:
@@ -90,6 +91,7 @@ class BudgetAwareHighway(BudgetAwareBase):
             cast_dtype=cast_dtype,
             max_episode_steps=max_episode_steps,
             modality_costs=modality_costs,
+            available_sensors=available_sensors,
             num_envs=num_envs,
             device=device,
             seed=seed,
@@ -109,6 +111,30 @@ class BudgetAwareHighway(BudgetAwareBase):
 
     def _build_modalities(self) -> Dict[str, Any]:
         """Build multi-observation from highway-env observation factory."""
+
+        # ── Validate and filter available sensors ────────────────────────────
+        if self._available_sensors is not None:
+            available_set = set(self._available_sensors)
+            valid_sensors = set(self.DEFAULT_TYPES)
+            invalid = available_set - valid_sensors
+
+            if invalid:
+                raise ValueError(
+                    f"Invalid sensor names in available_sensors: {invalid}. "
+                    f"Valid Highway sensors: {valid_sensors}"
+                )
+
+            # Filter observation_types to only available sensors
+            self.observation_types = [
+                t for t in self.observation_types if t in available_set
+            ]
+
+            if not self.observation_types:
+                raise ValueError(
+                    f"No valid observation types after filtering with "
+                    f"available_sensors={self._available_sensors}"
+                )
+
         # Build observation objects using highway-env's observation_factory
         obs_names: List[str] = []
         self._obs_objects = []

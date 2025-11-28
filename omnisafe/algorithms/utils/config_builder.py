@@ -50,6 +50,7 @@ class AlgoConfigBuilder:
         components = [
             algo,
             env_short,
+            AlgoConfigBuilder._get_sensor_subset_str(cfgs),  # Add sensor subset info
             AlgoConfigBuilder._get_obs_flags(cfgs),
             AlgoConfigBuilder._get_algo_flags(cfgs),
             AlgoConfigBuilder._get_budget_str(cfgs),
@@ -106,6 +107,29 @@ class AlgoConfigBuilder:
     def _get_obs_modality_norm(cfgs: Config) -> str:
         """Extract observation modality normalization flag."""
         return 'ObsModNorm' if cfgs['algo_cfgs'].get('obs_modality_normalize', False) else ''
+
+    @staticmethod
+    def _get_sensor_subset_str(cfgs: Config) -> str:
+        """Extract sensor subset configuration with abbreviations."""
+        available_sensors = cfgs['env_cfgs'].get('available_sensors')
+        if available_sensors is None:
+            return ''  # All sensors available (default)
+
+        # Sensor abbreviations
+        abbrev = {
+            'Kinematics': 'Kin',
+            'LidarObservation': 'Lid',
+            'OccupancyGrid': 'Occ',
+            'TimeToCollision': 'TTC',
+            'robot_proprioception': 'Rob',
+            'object_states': 'Obj',
+            'task_features': 'Task',
+            'camera': 'Cam',
+        }
+
+        # Build abbreviated sensor string
+        sensor_abbrevs = [abbrev.get(s, s[:3]) for s in sorted(available_sensors)]
+        return 'sens_' + '_'.join(sensor_abbrevs)
 
     @staticmethod
     def merge_custom_configs(cfgs: Config, custom_cfgs: dict[str, Any] | None) -> None:
