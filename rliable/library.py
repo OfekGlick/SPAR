@@ -305,7 +305,7 @@ def create_performance_profile(
     custom_profile_func: Optional[Callable[..., np.ndarray]] = None,
     method: str = 'percentile',
     task_bootstrap: bool = False,
-    reps: int = 2000,
+    reps: int = 50000,
     confidence_interval_size: Float = 0.95
 ) -> Tuple[Dict[str, np.ndarray], Dict[str, np.ndarray]]:
   """Function for calculating performance profiles.
