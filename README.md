@@ -1,4 +1,4 @@
-# BAFS: Budget-Aware Feature Selection for Safe Reinforcement Learning
+# SPAR: Selective Perception under Active Resource management for Reinforcement Learning
 
 A comprehensive framework for training safe reinforcement learning agents that learn to dynamically select which sensor modalities to use under cost constraints.
 
@@ -16,7 +16,7 @@ A comprehensive framework for training safe reinforcement learning agents that l
 
 ## Overview
 
-**BAFS (Budget-Aware Feature Selection)** extends standard reinforcement learning by enabling agents to learn:
+**SPAR (Selective Perception under Active Resource management)** extends standard reinforcement learning by enabling agents to learn:
 1. **What action to take** in the environment (e.g., steering, acceleration)
 2. **Which sensors to use** at each timestep (e.g., camera, lidar, proprioception)
 
@@ -25,14 +25,14 @@ This is formulated as a **Constrained Markov Decision Process (CMDP)** where:
 - The agent must satisfy a **budget constraint** on total sensor usage
 - The agent learns to trade off task performance vs. sensor cost
 
-### Why BAFS?
+### Why SPAR?
 
 In real-world robotics and autonomous systems:
 - **Sensors are expensive** (computational cost, energy, latency)
 - **Different sensors provide different information** (camera vs. lidar vs. proprioception)
 - **Optimal sensor usage varies by situation** (use camera when far, use lidar when close)
 
-BAFS learns **context-dependent sensor selection policies** that maximize task performance while respecting sensor budgets.
+SPAR learns **context-dependent sensor selection policies** that maximize task performance while respecting sensor budgets.
 
 ## Key Features
 
@@ -81,7 +81,7 @@ pip install -e .
 cd ../..
 ```
 
-6. **Install BAFS environments**:
+6. **Install SPAR environments**:
 ```bash
 pip install -e .
 ```
@@ -195,7 +195,7 @@ Common arguments for `run_bafs_highway.py` and `run_bafs_robosuite.py`:
 
 ### Training Modes
 
-**1. Budget-Constrained Learning (BAFS)**
+**1. Budget-Constrained Learning (SPAR)**
 ```bash
 python run_bafs_highway.py \
   --algo PPOLag \
