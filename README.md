@@ -52,8 +52,8 @@ SPAR learns **context-dependent sensor selection policies** that maximize task p
 
 1. **Clone the repository**:
 ```bash
-git clone https://github.com/yourusername/SPAR_2.git
-cd SPAR_2
+git clone https://github.com/yourusername/SPAR.git
+cd SPAR
 ```
 
 2. **Create conda environment**:
