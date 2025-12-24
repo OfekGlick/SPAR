@@ -106,7 +106,7 @@ class PPOLag(PPO):
     ) -> tuple[torch.Tensor, torch.Tensor]:
         r"""Compute dual advantages for multihead actor (environment + sensing).
 
-        For proper credit assignment in BAFS:
+        For proper credit assignment in SPAR:
         - Environment actor controls robot actions → affects reward only, NOT cost
         - Sensing actor controls modality selection → affects cost directly
 

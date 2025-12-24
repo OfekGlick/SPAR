@@ -1,6 +1,6 @@
 # RLiable Data Directory
 
-This directory contains manifest CSV files for BAFS experiment analysis.
+This directory contains manifest CSV files for SPAR experiment analysis.
 
 ## Directory Structure
 

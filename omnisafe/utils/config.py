@@ -78,7 +78,7 @@ class Config(dict):
         normalize_cost (bool): Whether to normalize cost.
         max_len (int): Maximum length.
         num_threads (int): Number of threads.
-        bafs(bool): Whether to use BAFS.
+        spar(bool): Whether to use SPAR.
     Keyword Args:
         kwargs (Any): keyword arguments to set the attributes.
     """

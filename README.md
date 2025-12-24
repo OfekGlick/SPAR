@@ -52,14 +52,14 @@ SPAR learns **context-dependent sensor selection policies** that maximize task p
 
 1. **Clone the repository**:
 ```bash
-git clone https://github.com/yourusername/BAFS_2.git
-cd BAFS_2
+git clone https://github.com/yourusername/SPAR_2.git
+cd SPAR_2
 ```
 
 2. **Create conda environment**:
 ```bash
-conda create -n bafs python=3.10
-conda activate bafs
+conda create -n spar python=3.10
+conda activate spar
 ```
 
 3. **Install dependencies**:
@@ -92,7 +92,7 @@ pip install -e .
 
 **Highway Environment:**
 ```bash
-python run_bafs_highway.py \
+python run_spar_highway.py \
   --algo PPOLag \
   --env-id budget-aware-highway-fast-v0 \
   --budget 1000 \
@@ -102,7 +102,7 @@ python run_bafs_highway.py \
 
 **Robosuite Environment:**
 ```bash
-python run_bafs_robosuite.py \
+python run_spar_robosuite.py \
   --algo PPOLag \
   --env-id budget-aware-Lift \
   --budget 500 \
@@ -113,7 +113,7 @@ python run_bafs_robosuite.py \
 ### Baseline (All Sensors)
 
 ```bash
-python run_bafs_highway.py \
+python run_spar_highway.py \
   --algo PPO \
   --env-id budget-aware-highway-fast-v0 \
   --use-all-obs \
@@ -136,11 +136,11 @@ python launch_robosuite.py --submit
 ## Repository Structure
 
 ```
-BAFS_2/
-├── bafs_envs/              # Budget-aware environment wrappers
-│   ├── budget_aware_base.py       # Base BAFS wrapper
-│   ├── budget_aware_highway.py    # Highway-env BAFS wrapper
-│   └── budget_aware_robosuite.py  # Robosuite BAFS wrapper
+SPAR_2/
+├── spar_envs/              # Budget-aware environment wrappers
+│   ├── budget_aware_base.py       # Base SPAR wrapper
+│   ├── budget_aware_highway.py    # Highway-env SPAR wrapper
+│   └── budget_aware_robosuite.py  # Robosuite SPAR wrapper
 ├── base_envs/              # Third-party base environments
 │   ├── highway_env/       # Highway driving simulator
 │   └── robosuite/         # Robotic manipulation simulator
@@ -161,14 +161,14 @@ BAFS_2/
 │   └── results/         # Generated plots and tables
 ├── runs/                 # Training outputs and logs
 ├── tests/                # Unit tests
-├── run_bafs_highway.py   # Highway training entry point
-├── run_bafs_robosuite.py # Robosuite training entry point
+├── run_spar_highway.py   # Highway training entry point
+├── run_spar_robosuite.py # Robosuite training entry point
 ├── launch_highway.py     # Highway job generator
 └── launch_robosuite.py   # Robosuite job generator
 ```
 
 See individual package READMEs for detailed documentation:
-- [bafs_envs/README.md](bafs_envs/README.md) - Environment wrappers
+- [spar_envs/README.md](spar_envs/README.md) - Environment wrappers
 - [rliable/README.md](rliable/README.md) - Analysis pipeline
 - [configs/README.md](configs/README.md) - Configuration system
 
@@ -176,7 +176,7 @@ See individual package READMEs for detailed documentation:
 
 ### Command-Line Arguments
 
-Common arguments for `run_bafs_highway.py` and `run_bafs_robosuite.py`:
+Common arguments for `run_spar_highway.py` and `run_spar_robosuite.py`:
 
 | Argument | Type | Description |
 |----------|------|-------------|
@@ -197,7 +197,7 @@ Common arguments for `run_bafs_highway.py` and `run_bafs_robosuite.py`:
 
 **1. Budget-Constrained Learning (SPAR)**
 ```bash
-python run_bafs_highway.py \
+python run_spar_highway.py \
   --algo PPOLag \
   --env-id budget-aware-highway-fast-v0 \
   --budget 1000 \
@@ -207,7 +207,7 @@ python run_bafs_highway.py \
 
 **2. Baseline (All Sensors)**
 ```bash
-python run_bafs_highway.py \
+python run_spar_highway.py \
   --algo PPO \
   --env-id budget-aware-highway-fast-v0 \
   --use-all-obs
@@ -215,7 +215,7 @@ python run_bafs_highway.py \
 
 **3. Random Sensor Selection**
 ```bash
-python run_bafs_highway.py \
+python run_spar_highway.py \
   --algo PPO \
   --env-id budget-aware-highway-fast-v0 \
   --random-obs-selection
@@ -223,7 +223,7 @@ python run_bafs_highway.py \
 
 **4. Penalty-Based (No Hard Constraint)**
 ```bash
-python run_bafs_highway.py \
+python run_spar_highway.py \
   --algo PPO \
   --env-id budget-aware-highway-fast-v0 \
   --penalty-coef 0.1
@@ -324,7 +324,7 @@ Output: `rliable/results/budget-aware-{env}/{env}_sensor_heatmaps.png`
 - Environment action: 7-DOF end-effector control
 - Sensor mask: Binary vector for 4 modalities
 
-See [bafs_envs/README.md](bafs_envs/README.md) for detailed environment documentation.
+See [spar_envs/README.md](spar_envs/README.md) for detailed environment documentation.
 
 ## Algorithms
 
@@ -364,7 +364,7 @@ See [configs/README.md](configs/README.md) for configuration details.
 ### Custom Sensor Costs
 
 ```python
-python run_bafs_highway.py \
+python run_spar_highway.py \
   --env-id budget-aware-highway-fast-v0 \
   --budget 1000 \
   --custom-modality-costs 1.0 2.0 1.5 3.0  # Per-modality costs
@@ -389,7 +389,7 @@ python relaunch_crashed_runs.py \
 
 ```
 Training Pipeline:
-  launch_*.py → Slurm Jobs → run_bafs_*.py → OmniSafe → BAFS Env → Base Env
+  launch_*.py → Slurm Jobs → run_spar_*.py → OmniSafe → SPAR Env → Base Env
 
 Analysis Pipeline:
   runs/ → CSV Manifest → compute_rliable_metrics.py → Plots & Tables
@@ -397,7 +397,7 @@ Analysis Pipeline:
 Environment Stack:
   Base Env (Highway/Robosuite)
     ↓
-  BAFS Wrapper (Modality masking + cost tracking)
+  SPAR Wrapper (Modality masking + cost tracking)
     ↓
   OmniSafe Wrappers (Normalization, time limits)
     ↓
@@ -417,7 +417,7 @@ cd ../robosuite && pip install -e .
 **CUDA Out of Memory:**
 ```bash
 # Reduce batch size in config
-python run_bafs_highway.py --algo PPOLag --env-id budget-aware-highway-fast-v0
+python run_spar_highway.py --algo PPOLag --env-id budget-aware-highway-fast-v0
 # Edit configs/highway_config.py: 'steps_per_epoch': 4096
 ```
 

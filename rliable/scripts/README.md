@@ -1,11 +1,11 @@
 # RLiable Analysis Scripts
 
-This directory contains scripts for analyzing BAFS experiment results using the RLiable library.
+This directory contains scripts for analyzing SPAR experiment results using the RLiable library.
 
 ## Scripts
 
 ### compute_rliable_metrics.py
-Main analysis script that computes statistical metrics and generates visualizations for BAFS experiments.
+Main analysis script that computes statistical metrics and generates visualizations for SPAR experiments.
 
 **Features:**
 - Computes aggregate metrics (mean, median, IQM, optimality gap)

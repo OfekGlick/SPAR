@@ -1,5 +1,5 @@
 """
-Launch script for Robosuite BAFS experiments.
+Launch script for Robosuite SPAR experiments.
 
 Generates and optionally submits Slurm batch jobs for different algorithm/environment
 combinations with budget-aware observation masking.
@@ -72,11 +72,11 @@ def build_filename_robosuite(job_info: dict) -> str:
 
 def main():
     """Main function to generate and submit Slurm jobs."""
-    p = argparse.ArgumentParser(description="Generate & submit Slurm jobs for BAFS Robosuite experiments")
+    p = argparse.ArgumentParser(description="Generate & submit Slurm jobs for SPAR Robosuite experiments")
 
     # Use defaults from config
     p.add_argument("--run-py", type=str, default=DEFAULT_LAUNCH_PARAMS['run_py'],
-                   help="Path to run_bafs_robosuite.py entrypoint")
+                   help="Path to run_spar_robosuite.py entrypoint")
     p.add_argument("--sbatch-template", type=str, default=DEFAULT_LAUNCH_PARAMS['sbatch_template'],
                    help="Path to sbatch template with {job} and {python_cmd} placeholders")
     p.add_argument("--sbatch-dir", type=str, default=DEFAULT_LAUNCH_PARAMS['sbatch_dir'],

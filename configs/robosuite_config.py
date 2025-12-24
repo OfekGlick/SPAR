@@ -1,5 +1,5 @@
 """
-Robosuite-env specific configuration for BAFS experiments.
+Robosuite-env specific configuration for SPAR experiments.
 
 Contains:
 - Algorithm lists
@@ -18,7 +18,7 @@ SAFE_ALGOS = ['PPOLag']
 UNSAFE_ALGOS = ['PPO']
 
 # ══════════════════════════════════════════════════════════════════════════════
-# Training Configuration (for run_bafs_robosuite.py)
+# Training Configuration (for run_spar_robosuite.py)
 # ══════════════════════════════════════════════════════════════════════════════
 
 CUSTOM_CFGS = {
@@ -61,7 +61,7 @@ CUSTOM_CFGS = {
 # ══════════════════════════════════════════════════════════════════════════════
 
 DEFAULT_LAUNCH_PARAMS = {
-    'run_py': '/home/ofek.glick/SPAR/run_bafs_robosuite.py',
+    'run_py': '/home/ofek.glick/SPAR/run_spar_robosuite.py',
     'sbatch_template': 'sbatch_template_clair.sh',
     'sbatch_dir': './sbatch_files_robosuite',
     'envs': [

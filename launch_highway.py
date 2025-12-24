@@ -1,5 +1,5 @@
 """
-Launch script for Highway-env BAFS experiments.
+Launch script for Highway-env SPAR experiments.
 
 Generates and optionally submits Slurm batch jobs for different algorithm/environment
 combinations with budget-aware observation masking.
@@ -19,7 +19,7 @@ from utils.launch_utils import (
 from configs.highway_config import SAFE_ALGOS, UNSAFE_ALGOS, DEFAULT_LAUNCH_PARAMS
 
 # Import wrapper to read modality costs
-from bafs_envs import budget_aware_highway
+from spar_envs import budget_aware_highway
 
 
 def get_feature_costs(env_id: str) -> tuple[np.ndarray, int]:
@@ -60,7 +60,7 @@ def build_py_args_highway(base_args: dict, costs: np.ndarray) -> dict:
 
     # ── Filter costs based on available sensors ───────────────────────────────
     if base_args.get('available_sensors') is not None:
-        from bafs_envs.budget_aware_highway import BudgetAwareHighway
+        from spar_envs.budget_aware_highway import BudgetAwareHighway
         all_sensors = BudgetAwareHighway.DEFAULT_TYPES
         available = base_args['available_sensors']
 
@@ -111,11 +111,11 @@ def build_filename_highway(job_info: dict) -> str:
 
 def main():
     """Main function to generate and submit Slurm jobs."""
-    p = argparse.ArgumentParser(description="Generate & submit Slurm jobs for BAFS Highway experiments")
+    p = argparse.ArgumentParser(description="Generate & submit Slurm jobs for SPAR Highway experiments")
 
     # Use defaults from config
     p.add_argument("--run-py", type=str, default=DEFAULT_LAUNCH_PARAMS['run_py'],
-                   help="Path to run_bafs_highway.py entrypoint")
+                   help="Path to run_spar_highway.py entrypoint")
     p.add_argument("--sbatch-template", type=str, default=DEFAULT_LAUNCH_PARAMS['sbatch_template'],
                    help="Path to sbatch template with {job} and {python_cmd} placeholders")
     p.add_argument("--sbatch-dir", type=str, default=DEFAULT_LAUNCH_PARAMS['sbatch_dir'],

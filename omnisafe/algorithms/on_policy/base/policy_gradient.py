@@ -616,7 +616,7 @@ class PolicyGradient(BaseAlgo):
             adv_r (torch.Tensor): The ``reward_advantage`` sampled from buffer.
             adv_c (torch.Tensor): The ``cost_advantage`` sampled from buffer.
         """
-        # For multihead actors with cost constraints (BAFS), use dual advantages for proper credit assignment
+        # For multihead actors with cost constraints (SPAR), use dual advantages for proper credit assignment
         # Environment actor gets reward only, sensing actor gets reward - cost
         is_multihead = isinstance(logp, tuple)
         has_dual_adv = hasattr(self, '_compute_dual_adv')

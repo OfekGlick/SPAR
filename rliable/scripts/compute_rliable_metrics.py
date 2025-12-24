@@ -1,5 +1,5 @@
 """
-Compute rliable metrics for BAFS Robosuite experiments.
+Compute rliable metrics for SPAR Robosuite experiments.
 
 This script loads experimental results from the CSV manifest and computes:
 1. Aggregate performance metrics (IQM, Mean, Median)
@@ -518,7 +518,7 @@ class RliableAnalyzer:
 
         if pairs is None:
             # Auto-generate interesting pairs
-            # Compare BAFS vs AllObs, Learned vs Random
+            # Compare SPAR vs AllObs, Learned vs Random
             pairs = []
             for i, algo1 in enumerate(algos):
                 for algo2 in algos[i+1:]:
@@ -1555,7 +1555,7 @@ def main():
     """Main entry point."""
     import argparse
 
-    parser = argparse.ArgumentParser(description='Compute rliable metrics for BAFS experiments')
+    parser = argparse.ArgumentParser(description='Compute rliable metrics for SPAR experiments')
     parser.add_argument('--csv', type=str,
                        default='../data/processed/manifest_for_rliable_deduplicated.csv',
                        help='Path to manifest CSV file')

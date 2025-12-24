@@ -21,7 +21,7 @@ from utils.launch_utils import (
 from configs.highway_config import UNSAFE_ALGOS, DEFAULT_LAUNCH_PARAMS
 
 # Import wrapper to read modality costs
-from bafs_envs import budget_aware_highway
+from spar_envs import budget_aware_highway
 
 
 def get_feature_costs(env_id: str) -> tuple[np.ndarray, int]:
@@ -59,7 +59,7 @@ def build_py_args_baseline(base_args: dict, costs: np.ndarray) -> dict:
 
     # ── Filter costs based on available sensors ───────────────────────────
     if base_args.get('available_sensors') is not None:
-        from bafs_envs.budget_aware_highway import BudgetAwareHighway
+        from spar_envs.budget_aware_highway import BudgetAwareHighway
         all_sensors = BudgetAwareHighway.DEFAULT_TYPES
         available = base_args['available_sensors']
 
@@ -119,7 +119,7 @@ def generate_baseline_jobs(
             budget_ratio = 1.0
             if sensor_config is not None:
                 # Filter costs to active sensors
-                from bafs_envs.budget_aware_highway import BudgetAwareHighway
+                from spar_envs.budget_aware_highway import BudgetAwareHighway
                 all_sensors = BudgetAwareHighway.DEFAULT_TYPES
                 filtered_costs = [costs[all_sensors.index(s)] for s in sensor_config if s in all_sensors]
                 total_cost = sum(filtered_costs)

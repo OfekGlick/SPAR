@@ -68,7 +68,7 @@ class PPO(PolicyGradient):
             ratio_env_clipped = torch.clamp(ratio_env, 1 - clip, 1 + clip)
             ratio_mask_clipped = torch.clamp(ratio_mask, 1 - clip, 1 + clip)
 
-            # Use separate advantages if provided (for proper credit assignment in BAFS)
+            # Use separate advantages if provided (for proper credit assignment in SPAR)
             # If adv is tuple: (adv_env, adv_mask) where env gets reward only, mask gets reward-cost
             # If adv is single tensor: use same advantage for both (backward compatibility)
             if isinstance(adv, tuple):

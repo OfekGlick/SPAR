@@ -1,5 +1,5 @@
 """
-Shared utilities for training scripts (run_bafs_highway.py, run_bafs_robosuite.py).
+Shared utilities for training scripts (run_spar_highway.py, run_spar_robosuite.py).
 
 Provides common functionality for:
 - Actor type auto-detection
@@ -11,8 +11,8 @@ import gymnasium as gym
 from gymnasium import spaces
 from omnisafe.envs.core import make as omnisafe_make
 import omnisafe
-import bafs_envs.budget_aware_robosuite
-import bafs_envs.budget_aware_highway
+import spar_envs.budget_aware_robosuite
+import spar_envs.budget_aware_highway
 
 
 def detect_actor_type(env_id: str, env_cfgs: dict) -> str:
@@ -24,7 +24,7 @@ def detect_actor_type(env_id: str, env_cfgs: dict) -> str:
 
     Returns:
         Appropriate actor type:
-        - 'multihead_double' for Tuple[Box/Discrete, MultiBinary] (BAFS environments)
+        - 'multihead_double' for Tuple[Box/Discrete, MultiBinary] (SPAR environments)
         - 'gaussian_learning' for continuous (Box) action spaces
         - 'categorical_learning' for discrete (Discrete) action spaces
 
@@ -140,7 +140,7 @@ def adjust_config_base(custom_cfgs: dict, args) -> None:
 
     if args.random_obs_selection:
         custom_cfgs['model_cfgs']['actor_type'] = 'random_mask'
-        custom_cfgs['env_cfgs']['use_all_obs'] = False  # Must use BAFS env with masks
+        custom_cfgs['env_cfgs']['use_all_obs'] = False  # Must use SPAR env with masks
         print("=== RANDOM MASK BASELINE MODE ===")
         print("Actor will learn environment actions but use random modality selection")
 

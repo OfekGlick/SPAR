@@ -1,5 +1,5 @@
 """
-Highway-env specific configuration for BAFS experiments.
+Highway-env specific configuration for SPAR experiments.
 
 Contains:
 - Algorithm lists
@@ -39,7 +39,7 @@ SAFE_ALGOS = ['PPOLag']
 UNSAFE_ALGOS = ['PPO']
 
 # ══════════════════════════════════════════════════════════════════════════════
-# Training Configuration (for run_bafs_highway.py)
+# Training Configuration (for run_spar_highway.py)
 # ══════════════════════════════════════════════════════════════════════════════
 
 CUSTOM_CFGS = {
@@ -79,7 +79,7 @@ CUSTOM_CFGS = {
 # ══════════════════════════════════════════════════════════════════════════════
 
 DEFAULT_LAUNCH_PARAMS = {
-    'run_py': '/home/ofek.glick/SPAR/run_bafs_highway.py',
+    'run_py': '/home/ofek.glick/SPAR/run_spar_highway.py',
     'sbatch_template': 'sbatch_template_general.sh',
     'sbatch_dir': './sbatch_files_highway',
     'envs': [
