@@ -377,14 +377,6 @@ Test specific sensor combinations:
 python launch_highway_sensor_subsets.py --generate --submit
 ```
 
-### Relaunch Failed Runs
-
-```bash
-python relaunch_crashed_runs.py \
-  --manifest rliable/data/raw/run_manifest.csv \
-  --output-dir sbatch_files_retry/
-```
-
 ## Project Structure Overview
 
 ```

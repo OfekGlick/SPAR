@@ -32,3 +32,4 @@ pynput
 termcolor
 pytest
 tqdm
+h5py
