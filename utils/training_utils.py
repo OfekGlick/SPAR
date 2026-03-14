@@ -11,8 +11,11 @@ import gymnasium as gym
 from gymnasium import spaces
 from omnisafe.envs.core import make as omnisafe_make
 import omnisafe
-import spar_envs.budget_aware_robosuite
 import spar_envs.budget_aware_highway
+try:
+    import spar_envs.budget_aware_robosuite
+except ImportError:
+    pass  # robosuite not installed (e.g., on Colab)
 
 
 def detect_actor_type(env_id: str, env_cfgs: dict) -> str:

@@ -1,5 +1,7 @@
 # SPAR: Selective Perception under Active Resource management for Reinforcement Learning
 
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/OfekGlick/SPAR/blob/master/spar_colab.ipynb)
+
 A comprehensive framework for training safe reinforcement learning agents that learn to dynamically select which sensor modalities to use under cost constraints.
 
 ## Table of Contents
