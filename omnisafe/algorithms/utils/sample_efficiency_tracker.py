@@ -64,8 +64,8 @@ class SampleEfficiencyTracker:
         # Calculate dynamic interval based on total training steps
         self._eval_interval = int(total_steps * self.eval_fraction)
 
-        # Calculate epochs per evaluation
-        self._epochs_per_eval = int(self._eval_interval / steps_per_epoch)
+        # Calculate epochs per evaluation (minimum 1 to avoid division-by-zero)
+        self._epochs_per_eval = max(1, int(self._eval_interval / steps_per_epoch))
 
         # Print tracking info
         print(f"\n{'='*80}")
