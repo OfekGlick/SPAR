@@ -574,7 +574,7 @@ class Evaluator:  # pylint: disable=too-many-instance-attributes
                 video_dir,
                 f'eval_ep{(episode_indices[ep_idx] + 1) if episode_indices is not None else (ep_idx + 1)}_reward{episode_rewards[ep_idx]:.1f}_cost{episode_costs[ep_idx]:.1f}-episode-{ep_idx}.mp4',
             )
-            if os.path.exists(video_path):
+            if os.path.exists(video_path) and wandb.run is not None:
                 wandb.log({
                     f"Evaluation/Video_Episode_{ep_idx + 1}": wandb.Video(video_path, fps=self.fps, format="mp4")
                 })
