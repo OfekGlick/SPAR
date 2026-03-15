@@ -61,14 +61,13 @@ class Evaluator:  # pylint: disable=too-many-instance-attributes
             actor: Actor | None = None,
             actor_critic: ConstraintActorCritic | ConstraintActorQCritic | None = None,
             render_mode: str = 'rgb_array',
-            use_wandb: bool = False,
     ) -> None:
         """Initialize an instance of :class:`Evaluator`."""
         self._env: CMDP | None = env
         self._actor: Actor | None = actor
         self._actor_critic: ConstraintActorCritic | ConstraintActorQCritic | None = actor_critic
         self._dividing_line: str = '\n' + '#' * 50 + '\n'
-        self._use_wandb: bool = use_wandb
+        self._use_wandb: bool = False
 
         self._safety_budget: torch.Tensor
         self._safety_obs = torch.ones(1)
@@ -109,6 +108,7 @@ class Evaluator:  # pylint: disable=too-many-instance-attributes
             ) from error
         self._dict_cfgs = kwargs
         self._cfgs = Config.dict2config(kwargs)
+        self._use_wandb = kwargs.get('logger_cfgs', {}).get('use_wandb', False)
 
     def _is_continuous_action_space(self, action_space: gymnasium.spaces.Space) -> bool:
         """Check if action space contains continuous actions.

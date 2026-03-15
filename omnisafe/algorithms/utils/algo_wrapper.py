@@ -228,7 +228,7 @@ class AlgoWrapper:
 
     def _init_statistical_tools(self) -> None:
         """Initialize statistical tools."""
-        self._evaluator = Evaluator(use_wandb=self.cfgs.logger_cfgs.use_wandb)
+        self._evaluator = Evaluator()
         self._plotter = Plotter()
 
     def plot(self, smooth: int = 1) -> None:
@@ -310,8 +310,8 @@ class AlgoWrapper:
         # Log to manifest CSV
         logger.log_to_manifest(metadata)
 
-        # Log to wandb with visualizations
-        if self.cfgs.logger_cfgs.use_wandb:
+        # Log to wandb with visualizations (use Logger's flag — it controls wandb.init)
+        if self.agent.logger._use_wandb:
             logger.log_to_wandb(
                 self.agent.logger,
                 results,
