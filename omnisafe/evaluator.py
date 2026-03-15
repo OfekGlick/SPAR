@@ -409,7 +409,7 @@ class Evaluator:  # pylint: disable=too-many-instance-attributes
             if record_video and current_episode_frames:
                 all_episode_frames.append(current_episode_frames)
                 all_episode_masks.append(current_episode_masks)
-            if not sample_efc and wandb.run is not None:
+            if not sample_efc and self._use_wandb:
                 wandb.log({"Evaluation/EpReward": ep_ret, "Evaluation/EpCost": ep_cost})
             print(f'Episode {episode + 1} results:')
             print(f'Episode reward: {ep_ret}')
