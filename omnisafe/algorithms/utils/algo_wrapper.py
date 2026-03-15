@@ -228,7 +228,7 @@ class AlgoWrapper:
 
     def _init_statistical_tools(self) -> None:
         """Initialize statistical tools."""
-        self._evaluator = Evaluator()
+        self._evaluator = Evaluator(use_wandb=self.custom_cfgs.get('logger_cfgs', {}).get('use_wandb', False))
         self._plotter = Plotter()
 
     def plot(self, smooth: int = 1) -> None:
