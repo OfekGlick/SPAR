@@ -311,11 +311,12 @@ class AlgoWrapper:
         logger.log_to_manifest(metadata)
 
         # Log to wandb with visualizations
-        logger.log_to_wandb(
-            self.agent.logger,
-            results,
-            use_all_obs=self.custom_cfgs['env_cfgs']['use_all_obs']
-        )
+        if wandb.run is not None:
+            logger.log_to_wandb(
+                self.agent.logger,
+                results,
+                use_all_obs=self.custom_cfgs['env_cfgs']['use_all_obs']
+            )
 
         # Render episodes
         self.render(num_episodes=10, render_mode="rgb_array", width=256, height=256)
