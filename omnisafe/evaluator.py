@@ -61,12 +61,14 @@ class Evaluator:  # pylint: disable=too-many-instance-attributes
             actor: Actor | None = None,
             actor_critic: ConstraintActorCritic | ConstraintActorQCritic | None = None,
             render_mode: str = 'rgb_array',
+            use_wandb: bool = False,
     ) -> None:
         """Initialize an instance of :class:`Evaluator`."""
         self._env: CMDP | None = env
         self._actor: Actor | None = actor
         self._actor_critic: ConstraintActorCritic | ConstraintActorQCritic | None = actor_critic
         self._dividing_line: str = '\n' + '#' * 50 + '\n'
+        self._use_wandb: bool = use_wandb
 
         self._safety_budget: torch.Tensor
         self._safety_obs = torch.ones(1)
@@ -574,7 +576,7 @@ class Evaluator:  # pylint: disable=too-many-instance-attributes
                 video_dir,
                 f'eval_ep{(episode_indices[ep_idx] + 1) if episode_indices is not None else (ep_idx + 1)}_reward{episode_rewards[ep_idx]:.1f}_cost{episode_costs[ep_idx]:.1f}-episode-{ep_idx}.mp4',
             )
-            if os.path.exists(video_path) and wandb.run is not None:
+            if os.path.exists(video_path) and self._use_wandb:
                 wandb.log({
                     f"Evaluation/Video_Episode_{ep_idx + 1}": wandb.Video(video_path, fps=self.fps, format="mp4")
                 })
